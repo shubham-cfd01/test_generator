@@ -1978,9 +1978,8 @@ def _convert_emf_wmf_to_png(img_bytes):
 
 @app.route('/series/image/<test_id>/<int:q_id>')
 @app.route('/series/image/<test_id>/<int:q_id>/<int:idx>')
-@login_required
 def series_image(test_id, q_id, idx=0):
-    """Serve an embedded image extracted from an uploaded file."""
+    """Serve an embedded image extracted from an uploaded file. No login required - test_id is unguessable UUID."""
     ts = test_sessions.get(test_id)
     if not ts:
         return "Not found", 404
