@@ -1506,8 +1506,42 @@ def _parse_diagram_string(raw):
     return geo
 
 
+IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.tif')
+IMAGE_STANDARD_MAX = 800
+IMAGE_STANDARD_MIN = 150
+
+
+def _resize_image_to_standard(img_bytes):
+    """Resize very large or small images to standard size (150-800px on longest side). Supports PNG, JPEG, GIF, BMP, etc."""
+    try:
+        from PIL import Image
+        buf = BytesIO(img_bytes)
+        img = Image.open(buf)
+        if img.mode in ('RGBA', 'LA'):
+            bg = Image.new('RGB', img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[-1])
+            img = bg
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        w, h = img.size
+        if w <= 0 or h <= 0:
+            return img_bytes
+        longest = max(w, h)
+        if longest <= IMAGE_STANDARD_MIN or longest >= IMAGE_STANDARD_MAX:
+            scale = IMAGE_STANDARD_MAX / longest if longest > IMAGE_STANDARD_MAX else IMAGE_STANDARD_MIN / longest
+            new_w = max(IMAGE_STANDARD_MIN, min(IMAGE_STANDARD_MAX, int(w * scale)))
+            new_h = max(IMAGE_STANDARD_MIN, min(IMAGE_STANDARD_MAX, int(h * scale)))
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            out = BytesIO()
+            img.save(out, format='PNG')
+            return out.getvalue()
+    except Exception:
+        pass
+    return img_bytes
+
+
 def parse_questions_from_zip(zip_stream):
-    """Parse ZIP containing Excel + diagram folder. Diagram column = filename e.g. circuit.png."""
+    """Parse ZIP containing Excel + diagram folder. Diagram column = filename(s) e.g. circuit.png or img1.png|img2.png."""
     from zipfile import ZipFile
     zf = ZipFile(zip_stream)
     xlsx_path = None
@@ -1515,14 +1549,17 @@ def parse_questions_from_zip(zip_stream):
     for n in zf.namelist():
         if n.lower().endswith('.xlsx') and not n.startswith('__'):
             xlsx_path = n
-        if ('diagram/' in n or 'images/' in n or 'image/' in n) and n.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')):
-            data = zf.read(n)
-            if data:
-                base = os.path.basename(n)
-                diagram_files[base] = data
-                diagram_files[base.lower()] = data
-                diagram_files[base.rsplit('.', 1)[0]] = data
-                diagram_files[base.rsplit('.', 1)[0].lower()] = data
+        if ('diagram/' in n or 'images/' in n or 'image/' in n):
+            lower = n.lower()
+            if any(lower.endswith(ext) for ext in IMAGE_EXTENSIONS):
+                data = zf.read(n)
+                if data:
+                    base = os.path.basename(n)
+                    diagram_files[base] = data
+                    diagram_files[base.lower()] = data
+                    stem = base.rsplit('.', 1)[0] if '.' in base else base
+                    diagram_files[stem] = data
+                    diagram_files[stem.lower()] = data
     if not xlsx_path:
         zf.close()
         raise ValueError("ZIP must contain an .xlsx file")
@@ -1533,18 +1570,39 @@ def parse_questions_from_zip(zip_stream):
     df = df.fillna('')
     questions = []
     images_store = {}
+
+    def _lookup_image(name):
+        name = name.strip()
+        if not name:
+            return None
+        keys = [name, name.lower()]
+        if '.' in name:
+            keys.append(name.rsplit('.', 1)[0])
+            keys.append(name.rsplit('.', 1)[0].lower())
+        else:
+            for ext in IMAGE_EXTENSIONS:
+                keys.append(name + ext)
+                keys.append(name.lower() + ext)
+        for k in keys:
+            if k in diagram_files:
+                return diagram_files[k]
+        return None
+
     for i, row in df.iterrows():
         q_id = int(row.get('id', i + 1))
         q_type = str(row.get('type', 'mcq')).strip().lower()
         opts = str(row.get('options', ''))
         opts_list = [o.strip() for o in opts.split('|')] if opts else []
         diagram_val = str(row.get('diagram', '')).strip()
-        img_data = None
+        img_list = []
         if diagram_val:
-            for key in [diagram_val, diagram_val.lower(), diagram_val + '.png', diagram_val.rsplit('.', 1)[0] if '.' in diagram_val else diagram_val]:
-                if key in diagram_files:
-                    img_data = diagram_files[key]
-                    break
+            for part in diagram_val.replace(',', '|').split('|'):
+                part = part.strip()
+                if part:
+                    data = _lookup_image(part)
+                    if data:
+                        data = _resize_image_to_standard(data)
+                        img_list.append(data)
         q = {
             'id': q_id,
             'subject': str(row.get('subject', '')).strip(),
@@ -1555,15 +1613,15 @@ def parse_questions_from_zip(zip_stream):
             'options': opts_list,
             'difficulty': str(row.get('difficulty', '')).strip(),
             'marks': row.get('marks', 0),
-            'has_image': bool(img_data),
-            'image_count': 1 if img_data else 0,
+            'has_image': bool(img_list),
+            'image_count': len(img_list),
         }
         try:
             q['marks'] = int(q['marks']) if q['marks'] else 0
         except (ValueError, TypeError):
             q['marks'] = 0
-        if img_data:
-            images_store[q_id] = [img_data]
+        if img_list:
+            images_store[q_id] = img_list
         questions.append(q)
     return questions, images_store
 
@@ -1722,19 +1780,46 @@ def _make_circuit_diagram_png():
         w, h = 200, 100
         img = Image.new('RGB', (w, h), (255, 255, 255))
         draw = ImageDraw.Draw(img)
-        # Battery (rectangle)
         draw.rectangle((20, 35, 50, 65), outline=(0, 0, 0), width=2)
         draw.line((35, 35, 35, 65), fill=(0, 0, 0), width=2)
-        # Resistor (zigzag)
         draw.line([(60, 50), (80, 35), (100, 65), (120, 35), (140, 50)], fill=(0, 0, 0), width=2)
-        # Wires
         draw.line((50, 50, 60, 50), fill=(0, 0, 0), width=2)
         draw.line((140, 50, 180, 50), fill=(0, 0, 0), width=2)
-        draw.line((180, 50, 180, 50), fill=(0, 0, 0), width=2)
         draw.ellipse((175, 45, 185, 55), outline=(0, 0, 0), width=2)
         buf = BytesIO()
         img.save(buf, format='PNG')
-        buf.seek(0)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _make_triangle_diagram_png():
+    """Create a simple triangle diagram for sample test."""
+    try:
+        from PIL import Image, ImageDraw
+        w, h = 180, 120
+        img = Image.new('RGB', (w, h), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.polygon([(90, 20), (20, 100), (160, 100)], outline=(0, 0, 0), width=2)
+        draw.text((75, 105), "base=6", fill=(0, 0, 0))
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _make_circle_diagram_png():
+    """Create a simple circle diagram for sample test."""
+    try:
+        from PIL import Image, ImageDraw
+        size = 120
+        img = Image.new('RGB', (size, size), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((10, 10, size - 10, size - 10), outline=(0, 0, 0), width=2)
+        draw.text((45, 55), "r=4", fill=(0, 0, 0))
+        buf = BytesIO()
+        img.save(buf, format='PNG')
         return buf.getvalue()
     except Exception:
         return None
@@ -1743,10 +1828,10 @@ def _make_circuit_diagram_png():
 def generate_sample_excel():
     data = [
         {"id": 1, "type": "mcq", "subject": "Mathematics", "chapter": "Rational Numbers", "question": "Which of the following is a rational number?", "options": "√2|π|0|√3", "answer": "0", "difficulty": "Easy", "marks": 1, "diagram": ""},
-        {"id": 2, "type": "mcq", "subject": "Mathematics", "chapter": "Squares", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225", "difficulty": "Easy", "marks": 1, "diagram": ""},
-        {"id": 3, "type": "mcq", "subject": "Physics", "chapter": "Current Electricity", "question": "Find the equivalent resistance of the circuit shown below.", "options": "2 ohm|4 ohm|6 ohm|8 ohm", "answer": "4 ohm", "difficulty": "Medium", "marks": 4, "diagram": "circuit.png"},
-        {"id": 4, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Cubes", "question": "The cube root of 512 is ____.", "options": "", "answer": "8", "difficulty": "Easy", "marks": 1, "diagram": ""},
-        {"id": 5, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Mensuration", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12", "difficulty": "Medium", "marks": 2, "diagram": ""},
+        {"id": 2, "type": "mcq", "subject": "Physics", "chapter": "Current Electricity", "question": "Find the equivalent resistance of the circuit shown below.", "options": "2 ohm|4 ohm|6 ohm|8 ohm", "answer": "4 ohm", "difficulty": "Medium", "marks": 4, "diagram": "circuit.png"},
+        {"id": 3, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Mensuration", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12", "difficulty": "Medium", "marks": 2, "diagram": "triangle.png"},
+        {"id": 4, "type": "mcq", "subject": "Mathematics", "chapter": "Mensuration", "question": "What is the area of the circle shown below?", "options": "12.56|15.70|28.27|50.27", "answer": "28.27", "difficulty": "Medium", "marks": 4, "diagram": "circle.png"},
+        {"id": 5, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Cubes", "question": "The cube root of 512 is ____.", "options": "", "answer": "8", "difficulty": "Easy", "marks": 1, "diagram": ""},
     ]
     df = pd.DataFrame(data)
     buf = BytesIO()
@@ -1756,16 +1841,18 @@ def generate_sample_excel():
 
 
 def generate_sample_zip():
-    """Create sample ZIP: questions.xlsx + images/circuit.png for upload test."""
+    """Create sample ZIP: questions.xlsx + images/ (circuit.png, triangle.png, circle.png) for upload test."""
     from zipfile import ZipFile
     excel_buf = generate_sample_excel()
-    circuit_png = _make_circuit_diagram_png()
-    if not circuit_png:
-        circuit_png = b'\x89PNG\r\n\x1a\n'  # minimal PNG header as fallback
+    circuit_png = _make_circuit_diagram_png() or b'\x89PNG\r\n\x1a\n'
+    triangle_png = _make_triangle_diagram_png() or circuit_png
+    circle_png = _make_circle_diagram_png() or circuit_png
     out = BytesIO()
     with ZipFile(out, 'w') as zf:
         zf.writestr('questions.xlsx', excel_buf.getvalue())
         zf.writestr('images/circuit.png', circuit_png)
+        zf.writestr('images/triangle.png', triangle_png)
+        zf.writestr('images/circle.png', circle_png)
     out.seek(0)
     return out
 
