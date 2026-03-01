@@ -1620,13 +1620,8 @@ def _extract_docx_images_via_zip(file_stream):
                 media[n] = zf.read(n)
 
         doc_tree = ET.fromstring(zf.read('word/document.xml'))
-        ns = {
-            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-            'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
-            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-            'v': 'urn:schemas-microsoft-com:vml',
-        }
-        body = doc_tree.find('w:body', ns) or doc_tree
+        ns_w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+        body = doc_tree.find(f'{{{ns_w}}}body') or doc_tree.find('.//{*}body') or doc_tree
         block_idx = 0
         for child in body:
             tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
@@ -1957,7 +1952,40 @@ def _detect_image_mimetype(data):
         return 'image/webp'
     if data[:2] == b'BM':
         return 'image/bmp'
+    if len(data) >= 44 and data[40:44] == b' EMF':
+        return 'image/x-emf'
+    if len(data) >= 4 and data[:4] == b'\x01\x00\x00\x00':
+        return 'image/x-emf'
+    if len(data) >= 4 and data[:4] == b'\xd7\xcd\xc6\x9a':
+        return 'image/x-wmf'
     return 'image/png'
+
+
+def _convert_emf_wmf_to_png(img_bytes):
+    """Convert EMF/WMF (Word pasted images) to PNG using ImageMagick. Returns PNG bytes or None."""
+    import subprocess
+    import tempfile
+    ext = '.emf' if _detect_image_mimetype(img_bytes) == 'image/x-emf' else '.wmf'
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f_in:
+            f_in.write(img_bytes)
+            path_in = f_in.name
+        path_out = path_in + '.png'
+        try:
+            for cmd in [['convert', path_in, path_out], ['magick', path_in, path_out]]:
+                r = subprocess.run(cmd, capture_output=True, timeout=15)
+                if r.returncode == 0 and os.path.exists(path_out):
+                    with open(path_out, 'rb') as f:
+                        return f.read()
+        finally:
+            for p in [path_in, path_out]:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+    except Exception:
+        pass
+    return None
 
 
 @app.route('/series/image/<test_id>/<int:q_id>')
@@ -1971,14 +1999,41 @@ def series_image(test_id, q_id, idx=0):
     img_list = ts.get('images', {}).get(q_id)
     if not img_list:
         return "No image", 404
-    # Backward compat: if stored as raw bytes instead of list
     if isinstance(img_list, bytes):
         img_list = [img_list]
     if idx < 0 or idx >= len(img_list):
         return "Image index out of range", 404
     img_bytes = img_list[idx]
+    mimetype = _detect_image_mimetype(img_bytes)
+    if mimetype in ('image/x-emf', 'image/x-wmf'):
+        png_bytes = _convert_emf_wmf_to_png(img_bytes)
+        if png_bytes:
+            img_bytes = png_bytes
+            mimetype = 'image/png'
+        else:
+            try:
+                from PIL import Image
+                buf = BytesIO(img_bytes)
+                img = Image.open(buf)
+                out = BytesIO()
+                img.save(out, format='PNG')
+                img_bytes = out.getvalue()
+                mimetype = 'image/png'
+            except Exception:
+                try:
+                    from PIL import Image
+                    img = Image.new('RGB', (200, 80), color=(240, 240, 240))
+                    from PIL import ImageDraw
+                    d = ImageDraw.Draw(img)
+                    d.text((10, 25), 'Pasted image: use Paste as Picture', fill=(100, 100, 100))
+                    out = BytesIO()
+                    img.save(out, format='PNG')
+                    img_bytes = out.getvalue()
+                    mimetype = 'image/png'
+                except Exception:
+                    pass
     buf = BytesIO(img_bytes)
-    return send_file(buf, mimetype=_detect_image_mimetype(img_bytes))
+    return send_file(buf, mimetype=mimetype)
 
 
 @app.route('/series/diagram/<test_id>/<int:q_id>')
