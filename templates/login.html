@@ -48,12 +48,13 @@
     <div class="login-container">
         <div class="login-card">
             <div class="logo"><i class="fa-solid fa-lock"></i></div>
-            <p class="subtitle">Enter your registered email or phone number to access the test generator.</p>
+            <p class="subtitle">Enter your registered email/phone and password to access the test generator.</p>
             {% if error %}
             <div class="error-msg">{{ error }}</div>
             {% endif %}
             <form method="POST">
                 <input type="text" name="contact" placeholder="Email or Phone Number" required autofocus>
+                <input type="password" name="password" placeholder="Password" required style="margin-top:12px;">
                 <button type="submit"><i class="fa-solid fa-right-to-bracket"></i> Access App</button>
             </form>
         </div>

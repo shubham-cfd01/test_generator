@@ -44,10 +44,16 @@ def init_db():
     conn.execute('''CREATE TABLE IF NOT EXISTS allowed_users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         contact TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL DEFAULT '',
         name TEXT DEFAULT '',
         added_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         is_active INTEGER DEFAULT 1
     )''')
+    # migrate: add password column if missing (existing DB)
+    try:
+        conn.execute('ALTER TABLE allowed_users ADD COLUMN password TEXT NOT NULL DEFAULT ""')
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -60,7 +66,7 @@ def get_db():
     return conn
 
 
-def is_user_allowed(contact):
+def verify_user(contact, password):
     contact = contact.strip().lower()
     conn = get_db()
     user = conn.execute(
@@ -68,7 +74,9 @@ def is_user_allowed(contact):
         (contact,)
     ).fetchone()
     conn.close()
-    return user is not None
+    if user is None:
+        return False
+    return user['password'] == password
 
 
 def login_required(f):
@@ -1344,14 +1352,15 @@ def home():
 def login_page():
     if request.method == 'POST':
         contact = request.form.get('contact', '').strip()
-        if not contact:
-            return render_template('login.html', error='Please enter your email or phone number.')
-        if is_user_allowed(contact):
+        password = request.form.get('password', '').strip()
+        if not contact or not password:
+            return render_template('login.html', error='Please enter both email/phone and password.')
+        if verify_user(contact, password):
             session['user_logged_in'] = True
             session['user_contact'] = contact
             return redirect(url_for('home'))
         else:
-            return render_template('login.html', error='Access denied. Your email/phone is not authorized. Contact admin.')
+            return render_template('login.html', error='Invalid credentials or access denied. Contact admin.')
     return render_template('login.html')
 
 
@@ -1388,14 +1397,15 @@ def admin_panel():
 def admin_add_user():
     contact = request.form.get('contact', '').strip().lower()
     name = request.form.get('name', '').strip()
-    if not contact:
+    password = request.form.get('password', '').strip()
+    if not contact or not password:
         return redirect(url_for('admin_panel'))
     conn = get_db()
     try:
-        conn.execute('INSERT INTO allowed_users (contact, name) VALUES (?, ?)', (contact, name))
+        conn.execute('INSERT INTO allowed_users (contact, name, password) VALUES (?, ?, ?)', (contact, name, password))
         conn.commit()
     except sqlite3.IntegrityError:
-        conn.execute('UPDATE allowed_users SET is_active = 1, name = ? WHERE LOWER(contact) = ?', (name, contact))
+        conn.execute('UPDATE allowed_users SET is_active = 1, name = ?, password = ? WHERE LOWER(contact) = ?', (name, password, contact))
         conn.commit()
     conn.close()
     return redirect(url_for('admin_panel'))
