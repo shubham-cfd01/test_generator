@@ -1454,18 +1454,57 @@ def _parse_diagram_string(raw):
 
 
 def parse_questions_from_excel(file_stream):
-    df = pd.read_excel(file_stream)
+    """Parse questions and extract embedded images from an Excel file."""
+    import openpyxl
+
+    raw_bytes = file_stream.read()
+    file_stream.seek(0)
+    df = pd.read_excel(BytesIO(raw_bytes))
     df.columns = [c.strip().lower() for c in df.columns]
     df = df.fillna('')
+
+    # Extract embedded images mapped to rows
+    embedded_images = {}
+    try:
+        wb = openpyxl.load_workbook(BytesIO(raw_bytes))
+        ws = wb.active
+        for img in ws._images:
+            try:
+                anchor = img.anchor
+                if hasattr(anchor, '_from'):
+                    row = anchor._from.row  # 0-indexed row
+                elif hasattr(anchor, 'anchorFrom'):
+                    row = anchor.anchorFrom.row
+                else:
+                    continue
+                img_data = BytesIO()
+                img_ref = img.ref if hasattr(img, 'ref') else img._data
+                if hasattr(img_ref, 'read'):
+                    img_data.write(img_ref.read())
+                elif isinstance(img_ref, bytes):
+                    img_data.write(img_ref)
+                else:
+                    img_data.write(img_ref())
+                img_data.seek(0)
+                embedded_images[row] = img_data.getvalue()
+            except Exception:
+                continue
+        wb.close()
+    except Exception as e:
+        print(f"[WARN] Could not extract Excel images: {e}")
+
     questions = []
+    images_store = {}
     for i, row in df.iterrows():
+        q_id = int(row.get('id', i + 1))
         q = {
-            'id': int(row.get('id', i + 1)),
+            'id': q_id,
             'type': str(row.get('type', 'mcq')).strip().lower(),
             'question': str(row.get('question', '')),
             'answer': str(row.get('answer', '')),
             'options': [],
-            'geometry': None
+            'geometry': None,
+            'has_image': False
         }
         opts = str(row.get('options', ''))
         if q['type'] == 'mcq' and opts:
@@ -1474,19 +1513,75 @@ def parse_questions_from_excel(file_stream):
         geo = _parse_diagram_string(diagram_raw)
         if geo:
             q['geometry'] = geo
+        # i is the dataframe row index; Excel row is i+1 (0-indexed, +1 for header)
+        if i + 1 in embedded_images:
+            images_store[q_id] = embedded_images[i + 1]
+            q['has_image'] = True
+        elif i in embedded_images:
+            images_store[q_id] = embedded_images[i]
+            q['has_image'] = True
         questions.append(q)
-    return questions
+    return questions, images_store
+
+
+def _extract_docx_paragraph_images(para, rels):
+    """Extract inline images from a docx paragraph. Returns list of bytes."""
+    images = []
+    try:
+        from lxml import etree
+        nsmap = {
+            'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+            'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
+        }
+        for drawing in para._element.findall('.//' + '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing'):
+            for blip in drawing.findall('.//' + '{http://schemas.openxmlformats.org/drawingml/2006/main}blip'):
+                embed_id = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                if embed_id and embed_id in rels:
+                    rel = rels[embed_id]
+                    if hasattr(rel, 'target_ref'):
+                        img_part = rel.target_part
+                        images.append(img_part.blob)
+    except Exception:
+        pass
+
+    # Also check for inline shapes via python-docx API
+    try:
+        from docx.oxml.ns import qn
+        for r in para._element.iter(qn('wp:inline')):
+            for blip in r.iter(qn('a:blip')):
+                embed_id = blip.get(qn('r:embed'))
+                if embed_id and embed_id in rels:
+                    images.append(rels[embed_id].target_part.blob)
+        for r in para._element.iter(qn('wp:anchor')):
+            for blip in r.iter(qn('a:blip')):
+                embed_id = blip.get(qn('r:embed'))
+                if embed_id and embed_id in rels:
+                    images.append(rels[embed_id].target_part.blob)
+    except Exception:
+        pass
+
+    return images
 
 
 def parse_questions_from_docx(file_stream):
     from docx import Document
     doc = Document(file_stream)
+    rels = doc.part.rels
     questions = []
+    images_store = {}
     q_id = 0
     current_q = None
 
     for para in doc.paragraphs:
         text = para.text.strip()
+
+        # Check for embedded images in this paragraph
+        para_images = _extract_docx_paragraph_images(para, rels)
+        if para_images and current_q:
+            images_store[current_q['id']] = para_images[0]
+            current_q['has_image'] = True
+
         if not text:
             continue
 
@@ -1495,7 +1590,12 @@ def parse_questions_from_docx(file_stream):
                 questions.append(current_q)
             q_id += 1
             q_text = _re.sub(r'^[Qq]\d+[\.\)]\s*', '', text).strip()
-            current_q = {'id': q_id, 'type': 'fill_in_the_blanks', 'question': q_text, 'options': [], 'answer': '', 'geometry': None}
+            current_q = {'id': q_id, 'type': 'fill_in_the_blanks', 'question': q_text, 'options': [], 'answer': '', 'geometry': None, 'has_image': False}
+            # Check if this question paragraph itself has images
+            q_images = _extract_docx_paragraph_images(para, rels)
+            if q_images:
+                images_store[q_id] = q_images[0]
+                current_q['has_image'] = True
 
         elif text.lower().startswith('answer:') or text.lower().startswith('ans:'):
             if current_q:
@@ -1520,7 +1620,7 @@ def parse_questions_from_docx(file_stream):
 
     if current_q:
         questions.append(current_q)
-    return questions
+    return questions, images_store
 
 
 def generate_sample_excel():
@@ -1619,9 +1719,9 @@ def series_start():
 
     try:
         if filename.endswith('.xlsx') or filename.endswith('.xls'):
-            questions = parse_questions_from_excel(file)
+            questions, images = parse_questions_from_excel(file)
         elif filename.endswith('.docx'):
-            questions = parse_questions_from_docx(file)
+            questions, images = parse_questions_from_docx(file)
         else:
             return jsonify({"error": "Unsupported file format. Upload .xlsx or .docx"}), 400
     except Exception as e:
@@ -1635,8 +1735,23 @@ def series_start():
         'questions': questions,
         'timer': timer_mins,
         'marks': total_marks,
+        'images': images,
     }
     return jsonify({"test_id": test_id})
+
+
+@app.route('/series/image/<test_id>/<int:q_id>')
+@login_required
+def series_image(test_id, q_id):
+    """Serve an embedded image extracted from an uploaded file."""
+    ts = test_sessions.get(test_id)
+    if not ts:
+        return "Not found", 404
+    img_bytes = ts.get('images', {}).get(q_id)
+    if not img_bytes:
+        return "No image", 404
+    buf = BytesIO(img_bytes)
+    return send_file(buf, mimetype='image/png')
 
 
 @app.route('/series/diagram/<test_id>/<int:q_id>')

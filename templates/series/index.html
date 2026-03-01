@@ -45,6 +45,11 @@
                         <span class="question-type badge badge-{{ q.type }}">{{ 'Multiple Choice' if q.type == 'mcq' else 'Fill in the blanks' }}</span>
                     </div>
                     <div class="question-text">{{ q.question }}</div>
+                    {% if q.has_image %}
+                    <div class="diagram-container" style="text-align:center;margin:16px 0;padding:12px;background:#F8FAFC;border-radius:12px;border:1px solid #E2E8F0;">
+                        <img src="/series/image/{{ test_id }}/{{ q.id }}" alt="Question Image" style="max-width:400px;max-height:300px;border-radius:8px;">
+                    </div>
+                    {% endif %}
                     {% if q.geometry %}
                     <div class="diagram-container" style="text-align:center;margin:16px 0;padding:12px;background:#F8FAFC;border-radius:12px;border:1px solid #E2E8F0;">
                         <img src="/series/diagram/{{ test_id }}/{{ q.id }}" alt="Diagram" style="max-width:320px;max-height:240px;border-radius:8px;">
