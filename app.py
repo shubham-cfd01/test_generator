@@ -1456,6 +1456,8 @@ def _parse_diagram_string(raw):
 def parse_questions_from_excel(file_stream):
     """Parse questions and extract embedded images from an Excel file."""
     import openpyxl
+    from zipfile import ZipFile
+    from xml.etree import ElementTree as ET
 
     raw_bytes = file_stream.read()
     file_stream.seek(0)
@@ -1463,35 +1465,101 @@ def parse_questions_from_excel(file_stream):
     df.columns = [c.strip().lower() for c in df.columns]
     df = df.fillna('')
 
-    # Extract embedded images mapped to rows
     embedded_images = {}
+
+    # Primary: parse the xlsx ZIP structure directly for reliable image extraction
     try:
-        wb = openpyxl.load_workbook(BytesIO(raw_bytes))
-        ws = wb.active
-        for img in ws._images:
-            try:
-                anchor = img.anchor
-                if hasattr(anchor, '_from'):
-                    row = anchor._from.row  # 0-indexed row
-                elif hasattr(anchor, 'anchorFrom'):
-                    row = anchor.anchorFrom.row
-                else:
-                    continue
-                img_data = BytesIO()
-                img_ref = img.ref if hasattr(img, 'ref') else img._data
-                if hasattr(img_ref, 'read'):
-                    img_data.write(img_ref.read())
-                elif isinstance(img_ref, bytes):
-                    img_data.write(img_ref)
-                else:
-                    img_data.write(img_ref())
-                img_data.seek(0)
-                embedded_images[row] = img_data.getvalue()
-            except Exception:
+        zf = ZipFile(BytesIO(raw_bytes))
+        media_files = {}
+        for n in zf.namelist():
+            if n.startswith('xl/media/'):
+                media_files[n] = zf.read(n)
+                media_files[os.path.basename(n)] = zf.read(n)
+        print(f"[IMG] Found {len(media_files)//2} media files in xl/media/")
+
+        rels_map = {}
+        for rname in zf.namelist():
+            if 'drawings/_rels/' in rname and rname.endswith('.rels'):
+                rel_tree = ET.fromstring(zf.read(rname))
+                for rel in rel_tree:
+                    rid = rel.get('Id')
+                    target_raw = rel.get('Target', '')
+                    target_clean = target_raw.replace('../', '')
+                    rels_map[rid] = target_clean
+                    rels_map[rid + '_full'] = 'xl/' + target_clean
+        print(f"[IMG] Relationship IDs found: {list(k for k in rels_map if not k.endswith('_full'))}")
+
+        ns_xdr = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
+        ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        ns_r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+        for dname in zf.namelist():
+            if not ('drawings/drawing' in dname and dname.endswith('.xml')):
                 continue
-        wb.close()
+            tree = ET.fromstring(zf.read(dname))
+
+            for anchor_tag in ['twoCellAnchor', 'oneCellAnchor', 'absoluteAnchor']:
+                for anchor in tree.findall(f'{{{ns_xdr}}}{anchor_tag}'):
+                    from_el = anchor.find(f'{{{ns_xdr}}}from')
+                    row = None
+                    if from_el is not None:
+                        row_el = from_el.find(f'{{{ns_xdr}}}row')
+                        if row_el is not None and row_el.text is not None:
+                            row = int(row_el.text)
+
+                    if row is None:
+                        continue
+
+                    blip = anchor.find(f'.//{{{ns_a}}}blip')
+                    if blip is None:
+                        continue
+                    embed_id = blip.get(f'{{{ns_r}}}embed')
+                    if not embed_id:
+                        continue
+
+                    target_path = rels_map.get(embed_id, '')
+                    full_path = rels_map.get(embed_id + '_full', '')
+                    img_data = (
+                        media_files.get(full_path) or
+                        media_files.get(target_path) or
+                        media_files.get(os.path.basename(target_path))
+                    )
+                    if img_data:
+                        embedded_images[row] = img_data
+                        print(f"[IMG] Mapped image '{target_path}' to row {row}")
+                    else:
+                        print(f"[IMG] Could not find media for rId={embed_id}, target={target_path}")
+
+        zf.close()
+        print(f"[IMG] Total images extracted: {len(embedded_images)}, rows: {list(embedded_images.keys())}")
     except Exception as e:
-        print(f"[WARN] Could not extract Excel images: {e}")
+        print(f"[WARN] ZIP-based image extraction failed: {e}")
+        import traceback as _tb; _tb.print_exc()
+
+    # Fallback: try openpyxl API
+    if not embedded_images:
+        try:
+            wb = openpyxl.load_workbook(BytesIO(raw_bytes))
+            ws = wb.active
+            for img in ws._images:
+                try:
+                    anchor = img.anchor
+                    if hasattr(anchor, '_from'):
+                        row = anchor._from.row
+                    elif hasattr(anchor, 'anchorFrom'):
+                        row = anchor.anchorFrom.row
+                    else:
+                        continue
+                    if hasattr(img, '_data') and callable(img._data):
+                        embedded_images[row] = img._data()
+                    elif hasattr(img, 'ref') and hasattr(img.ref, 'read'):
+                        embedded_images[row] = img.ref.read()
+                    print(f"[IMG-fallback] Mapped openpyxl image to row {row}")
+                except Exception:
+                    continue
+            wb.close()
+        except Exception as e2:
+            print(f"[WARN] openpyxl fallback also failed: {e2}")
 
     questions = []
     images_store = {}
@@ -1513,13 +1581,11 @@ def parse_questions_from_excel(file_stream):
         geo = _parse_diagram_string(diagram_raw)
         if geo:
             q['geometry'] = geo
-        # i is the dataframe row index; Excel row is i+1 (0-indexed, +1 for header)
-        if i + 1 in embedded_images:
-            images_store[q_id] = embedded_images[i + 1]
-            q['has_image'] = True
-        elif i in embedded_images:
-            images_store[q_id] = embedded_images[i]
-            q['has_image'] = True
+        for candidate_row in [i + 1, i, i + 2]:
+            if candidate_row in embedded_images:
+                images_store[q_id] = embedded_images[candidate_row]
+                q['has_image'] = True
+                break
         questions.append(q)
     return questions, images_store
 
@@ -1750,8 +1816,19 @@ def series_image(test_id, q_id):
     img_bytes = ts.get('images', {}).get(q_id)
     if not img_bytes:
         return "No image", 404
+    mimetype = 'image/png'
+    if img_bytes[:3] == b'\xff\xd8\xff':
+        mimetype = 'image/jpeg'
+    elif img_bytes[:4] == b'GIF8':
+        mimetype = 'image/gif'
+    elif img_bytes[:4] == b'RIFF' and img_bytes[8:12] == b'WEBP':
+        mimetype = 'image/webp'
+    elif img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        mimetype = 'image/png'
+    elif img_bytes[:2] in (b'BM',):
+        mimetype = 'image/bmp'
     buf = BytesIO(img_bytes)
-    return send_file(buf, mimetype='image/png')
+    return send_file(buf, mimetype=mimetype)
 
 
 @app.route('/series/diagram/<test_id>/<int:q_id>')
