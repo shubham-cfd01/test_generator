@@ -1830,8 +1830,25 @@ def generate_sample_excel():
     return buf
 
 
+def _make_blue_circle_png():
+    """Create a simple blue circle PNG."""
+    try:
+        from PIL import Image, ImageDraw
+        size = 120
+        img = Image.new('RGBA', (size, size), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((4, 4, size - 4, size - 4), fill=(100, 149, 237, 255), outline=(70, 130, 180, 255))
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
+
+
 def generate_sample_docx():
     from docx import Document
+    from docx.shared import Inches
     doc = Document()
     doc.add_heading('Sample Test Questions', level=1)
     doc.add_paragraph('Format: Start each question with Q1. Q2. etc.\n'
@@ -1860,7 +1877,11 @@ def generate_sample_docx():
     doc.add_paragraph('Answer: 12')
     doc.add_paragraph('')
     doc.add_paragraph('Q5. What is the area of the circle shown below?')
-    doc.add_paragraph('[Paste or draw your diagram here]')
+    p_img = doc.add_paragraph()
+    circle_buf = _make_blue_circle_png()
+    if circle_buf:
+        run = p_img.add_run()
+        run.add_picture(circle_buf, width=Inches(1.5))
     doc.add_paragraph('A) 12.56')
     doc.add_paragraph('B) 15.70')
     doc.add_paragraph('C) 28.27')
