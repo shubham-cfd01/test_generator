@@ -1515,7 +1515,7 @@ def parse_questions_from_zip(zip_stream):
     for n in zf.namelist():
         if n.lower().endswith('.xlsx') and not n.startswith('__'):
             xlsx_path = n
-        if ('diagram/' in n or 'images/' in n) and n.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')):
+        if ('diagram/' in n or 'images/' in n or 'image/' in n) and n.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')):
             data = zf.read(n)
             if data:
                 base = os.path.basename(n)
@@ -1715,260 +1715,59 @@ def parse_questions_from_excel(file_stream):
     return questions, images_store
 
 
-def _extract_docx_images_via_zip(file_stream):
-    """Extract images from docx - maps block_index -> list of image bytes. Uses same block order as _iter_docx_blocks_in_order."""
-    from zipfile import ZipFile
-    from xml.etree import ElementTree as ET
-    raw = file_stream.read()
-    file_stream.seek(0)
-    block_images = {}
-    ns_r = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+def _make_circuit_diagram_png():
+    """Create a simple circuit diagram PNG for sample test."""
     try:
-        zf = ZipFile(BytesIO(raw))
-        if 'word/document.xml' not in zf.namelist():
-            zf.close()
-            return block_images
-
-        rels = {}
-        for n in zf.namelist():
-            if n == 'word/_rels/document.xml.rels':
-                tree = ET.fromstring(zf.read(n))
-                for rel in tree:
-                    rid = rel.get('Id')
-                    target = (rel.get('Target') or '').strip()
-                    if not target:
-                        continue
-                    target = target.replace('../', '').lstrip('/')
-                    if 'media/' in target or target.endswith(('.png', '.jpg', '.jpeg', '.emf', '.wmf', '.gif')):
-                        path = 'word/' + target if not target.startswith('word/') else target
-                        rels[rid] = path
-                break
-
-        media = {}
-        for n in zf.namelist():
-            if n.startswith('word/media/'):
-                data = zf.read(n)
-                media[n] = data
-                media[os.path.basename(n)] = data
-
-        doc_tree = ET.fromstring(zf.read('word/document.xml'))
-        ns_w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-        body = doc_tree.find(f'{{{ns_w}}}body') or doc_tree.find('.//{*}body') or doc_tree
-        if body is None:
-            body = doc_tree
-
-        def _get_imgs_from_elem(elem):
-            imgs, seen = [], set()
-            for el in elem.iter():
-                tag = (el.tag or '').split('}')[-1] if '}' in (el.tag or '') else ''
-                rid = None
-                if tag == 'blip':
-                    rid = el.get(ns_r + 'embed')
-                elif 'imagedata' in tag:
-                    rid = el.get(ns_r + 'id') or el.get(ns_r + 'href')
-                if rid and rid in rels and rid not in seen:
-                    path = rels[rid]
-                    data = media.get(path) or media.get(os.path.basename(path))
-                    if data:
-                        imgs.append(data)
-                        seen.add(rid)
-            return imgs
-
-        block_idx = 0
-        for child in list(body):
-            tag = (child.tag or '').split('}')[-1] if '}' in (child.tag or '') else ''
-            if tag == 'p':
-                imgs = _get_imgs_from_elem(child)
-                if imgs:
-                    block_images[block_idx] = imgs
-                block_idx += 1
-            elif tag == 'tbl':
-                for tr in child.findall('.//{*}tr'):
-                    for tc in tr.findall('.//{*}tc'):
-                        for p in tc.findall('.//{*}p'):
-                            imgs = _get_imgs_from_elem(p)
-                            if imgs:
-                                block_images[block_idx] = imgs
-                            block_idx += 1
-        if not block_images and media:
-            all_imgs = []
-            seen = set()
-            for el in doc_tree.iter():
-                tag = (el.tag or '').split('}')[-1] if '}' in (el.tag or '') else ''
-                rid = None
-                if tag == 'blip':
-                    rid = el.get(ns_r + 'embed')
-                elif 'imagedata' in tag:
-                    rid = el.get(ns_r + 'id') or el.get(ns_r + 'href')
-                if rid and rid in rels and rid not in seen:
-                    path = rels[rid]
-                    data = media.get(path) or media.get(os.path.basename(path))
-                    if data:
-                        all_imgs.append(data)
-                        seen.add(rid)
-            if all_imgs:
-                block_images['_orphans'] = all_imgs
-        zf.close()
-    except Exception as e:
-        print(f"[WARN] docx ZIP image extraction failed: {e}")
-    return block_images
-
-
-def _extract_docx_paragraph_images(para, rels, zip_images=None, block_idx=None):
-    """Extract images from a docx paragraph. Uses zip_images if provided (more reliable)."""
-    if zip_images is not None and block_idx is not None and block_idx in zip_images:
-        return zip_images[block_idx]
-
-    seen_ids = set()
-    images = []
-
-    def _add_blob_for_rid(rid):
-        if not rid or rid in seen_ids:
-            return
-        try:
-            if hasattr(rels, 'get') and rid in rels:
-                blob = rels[rid].target_part.blob
-            elif hasattr(rels, 'related_parts') and rid in rels.related_parts:
-                blob = rels.related_parts[rid].blob
-            else:
-                return
-            if blob:
-                seen_ids.add(rid)
-                images.append(blob)
-        except Exception:
-            pass
-
-    ns_a = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
-    ns_r = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
-    ns_v = '{urn:schemas-microsoft-com:vml}'
-    ns_o = '{urn:schemas-microsoft-com:office:office}'
-    el = para._element
-
-    for blip in el.iter(f'{ns_a}blip'):
-        _add_blob_for_rid(blip.get(f'{ns_r}embed'))
-    for imgdata in el.iter(f'{ns_v}imagedata'):
-        _add_blob_for_rid(imgdata.get(f'{ns_r}id'))
-        _add_blob_for_rid(imgdata.get(f'{ns_r}href'))
-    for ole in el.iter(f'{ns_o}OLEObject'):
-        _add_blob_for_rid(ole.get(f'{ns_r}id'))
-    for shape in el.iter(f'{ns_v}shape'):
-        for child in shape:
-            if 'imagedata' in child.tag:
-                _add_blob_for_rid(child.get(f'{ns_r}id'))
-
-    return images
-
-
-def _iter_docx_blocks_in_order(doc):
-    """Yield paragraphs and table-cell paragraphs in document order (body + tables)."""
-    from docx.oxml.table import CT_Tbl
-    from docx.oxml.text.paragraph import CT_P
-    from docx.table import Table
-    from docx.text.paragraph import Paragraph
-    body = doc.element.body
-    for child in body.iterchildren():
-        if isinstance(child, CT_P):
-            yield Paragraph(child, doc)
-        elif isinstance(child, CT_Tbl):
-            tbl = Table(child, doc)
-            for row in tbl.rows:
-                for cell in row.cells:
-                    for para in cell.paragraphs:
-                        yield para
-
-
-def parse_questions_from_docx(file_stream):
-    from docx import Document
-    raw = file_stream.read()
-    file_stream.seek(0)
-    doc = Document(BytesIO(raw))
-    rels = doc.part.rels
-    zip_images = _extract_docx_images_via_zip(BytesIO(raw))
-    questions = []
-    images_store = {}
-    q_id = 0
-    current_q = None
-    block_idx = 0
-
-    try:
-        block_iter = _iter_docx_blocks_in_order(doc)
+        from PIL import Image, ImageDraw
+        w, h = 200, 100
+        img = Image.new('RGB', (w, h), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        # Battery (rectangle)
+        draw.rectangle((20, 35, 50, 65), outline=(0, 0, 0), width=2)
+        draw.line((35, 35, 35, 65), fill=(0, 0, 0), width=2)
+        # Resistor (zigzag)
+        draw.line([(60, 50), (80, 35), (100, 65), (120, 35), (140, 50)], fill=(0, 0, 0), width=2)
+        # Wires
+        draw.line((50, 50, 60, 50), fill=(0, 0, 0), width=2)
+        draw.line((140, 50, 180, 50), fill=(0, 0, 0), width=2)
+        draw.line((180, 50, 180, 50), fill=(0, 0, 0), width=2)
+        draw.ellipse((175, 45, 185, 55), outline=(0, 0, 0), width=2)
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        return buf.getvalue()
     except Exception:
-        block_iter = doc.paragraphs
-
-    for para in block_iter:
-        text = (para.text or '').strip()
-
-        para_images = _extract_docx_paragraph_images(para, rels, zip_images=zip_images, block_idx=block_idx)
-        block_idx += 1
-
-        # Is this the start of a new question?
-        is_new_q = bool(text) and text.lower().startswith('q') and ('.' in text[:5] or ')' in text[:5])
-
-        if is_new_q:
-            if current_q:
-                current_q['image_count'] = len(images_store.get(current_q['id'], []))
-                questions.append(current_q)
-            q_id += 1
-            q_text = _re.sub(r'^[Qq]\d+[\.\)]\s*', '', text).strip()
-            current_q = {
-                'id': q_id, 'type': 'fill_in_the_blanks',
-                'subject': '', 'chapter': '', 'difficulty': '', 'marks': 0,
-                'question': q_text, 'options': [], 'answer': '',
-                'has_image': False, 'image_count': 0,
-            }
-
-        # Rule: everything below (options, diagrams, images) belongs to current question until next Q
-        if para_images and current_q:
-            images_store.setdefault(current_q['id'], []).extend(para_images)
-            current_q['has_image'] = True
-
-        if not text or is_new_q:
-            continue
-
-        if text.lower().startswith('answer:') or text.lower().startswith('ans:'):
-            if current_q:
-                ans = _re.sub(r'^(?:answer|ans)\s*:\s*', '', text, flags=_re.IGNORECASE).strip()
-                current_q['answer'] = ans
-
-        elif text.lower().startswith(('a)', 'b)', 'c)', 'd)', 'a.', 'b.', 'c.', 'd.')):
-            if current_q:
-                current_q['type'] = 'mcq'
-                opt_text = _re.sub(r'^[a-dA-D][\.\)]\s*', '', text).strip()
-                current_q['options'].append(opt_text)
-
-        elif current_q and not current_q['question']:
-            current_q['question'] = text
-
-    if current_q:
-        current_q['image_count'] = len(images_store.get(current_q['id'], []))
-        questions.append(current_q)
-
-    orphans = zip_images.get('_orphans', []) if isinstance(zip_images, dict) else []
-    if orphans and not any(q.get('has_image') for q in questions):
-        for idx, q in enumerate(questions):
-            if idx < len(orphans):
-                images_store[q['id']] = [orphans[idx]]
-                q['has_image'] = True
-                q['image_count'] = 1
-
-    return questions, images_store
+        return None
 
 
 def generate_sample_excel():
     data = [
         {"id": 1, "type": "mcq", "subject": "Mathematics", "chapter": "Rational Numbers", "question": "Which of the following is a rational number?", "options": "√2|π|0|√3", "answer": "0", "difficulty": "Easy", "marks": 1, "diagram": ""},
         {"id": 2, "type": "mcq", "subject": "Mathematics", "chapter": "Squares", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225", "difficulty": "Easy", "marks": 1, "diagram": ""},
-        {"id": 3, "type": "mcq", "subject": "Mathematics", "chapter": "Linear Equations", "question": "If 3x + 5 = 20, what is the value of x?", "options": "3|5|15|4", "answer": "5", "difficulty": "Medium", "marks": 2, "diagram": ""},
+        {"id": 3, "type": "mcq", "subject": "Physics", "chapter": "Current Electricity", "question": "Find the equivalent resistance of the circuit shown below.", "options": "2 ohm|4 ohm|6 ohm|8 ohm", "answer": "4 ohm", "difficulty": "Medium", "marks": 4, "diagram": "circuit.png"},
         {"id": 4, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Cubes", "question": "The cube root of 512 is ____.", "options": "", "answer": "8", "difficulty": "Easy", "marks": 1, "diagram": ""},
         {"id": 5, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Mensuration", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12", "difficulty": "Medium", "marks": 2, "diagram": ""},
-        {"id": 6, "type": "mcq", "subject": "Mathematics", "chapter": "Mensuration", "question": "What is the area of the circle shown below?", "options": "12.56|15.70|28.27|50.27", "answer": "28.27", "difficulty": "Medium", "marks": 4, "diagram": ""},
-        {"id": 7, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Mensuration", "question": "Find the perimeter of the rectangle shown below.", "options": "", "answer": "22", "difficulty": "Medium", "marks": 2, "diagram": ""},
     ]
     df = pd.DataFrame(data)
     buf = BytesIO()
     df.to_excel(buf, index=False)
     buf.seek(0)
     return buf
+
+
+def generate_sample_zip():
+    """Create sample ZIP: questions.xlsx + images/circuit.png for upload test."""
+    from zipfile import ZipFile
+    excel_buf = generate_sample_excel()
+    circuit_png = _make_circuit_diagram_png()
+    if not circuit_png:
+        circuit_png = b'\x89PNG\r\n\x1a\n'  # minimal PNG header as fallback
+    out = BytesIO()
+    with ZipFile(out, 'w') as zf:
+        zf.writestr('questions.xlsx', excel_buf.getvalue())
+        zf.writestr('images/circuit.png', circuit_png)
+    out.seek(0)
+    return out
 
 
 def _make_blue_circle_png():
@@ -1987,53 +1786,6 @@ def _make_blue_circle_png():
         return None
 
 
-def generate_sample_docx():
-    from docx import Document
-    from docx.shared import Inches
-    doc = Document()
-    doc.add_heading('Sample Test Questions', level=1)
-    doc.add_paragraph('Format: Start each question with Q1. Q2. etc.\n'
-                      'Add options as A) B) C) D) on separate lines.\n'
-                      'Write Answer: on a separate line.\n'
-                      'For diagrams, paste or draw your image below the question—everything belongs to that question until the next Q.\n')
-    doc.add_paragraph('Q1. Which of the following is a rational number?')
-    doc.add_paragraph('A) √2')
-    doc.add_paragraph('B) π')
-    doc.add_paragraph('C) 0')
-    doc.add_paragraph('D) √3')
-    doc.add_paragraph('Answer: 0')
-    doc.add_paragraph('')
-    doc.add_paragraph('Q2. What is the square of 15?')
-    doc.add_paragraph('A) 225')
-    doc.add_paragraph('B) 255')
-    doc.add_paragraph('C) 125')
-    doc.add_paragraph('D) 325')
-    doc.add_paragraph('Answer: 225')
-    doc.add_paragraph('')
-    doc.add_paragraph('Q3. The cube root of 512 is ____.')
-    doc.add_paragraph('Answer: 8')
-    doc.add_paragraph('')
-    doc.add_paragraph('Q4. Find the area of the triangle shown below.')
-    doc.add_paragraph('[Paste or draw your diagram here]')
-    doc.add_paragraph('Answer: 12')
-    doc.add_paragraph('')
-    doc.add_paragraph('Q5. What is the area of the circle shown below?')
-    p_img = doc.add_paragraph()
-    circle_buf = _make_blue_circle_png()
-    if circle_buf:
-        run = p_img.add_run()
-        run.add_picture(circle_buf, width=Inches(1.5))
-    doc.add_paragraph('A) 12.56')
-    doc.add_paragraph('B) 15.70')
-    doc.add_paragraph('C) 28.27')
-    doc.add_paragraph('D) 50.27')
-    doc.add_paragraph('Answer: 28.27')
-    buf = BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf
-
-
 @app.route('/series')
 @login_required
 def series_home():
@@ -2049,11 +1801,12 @@ def series_sample_excel():
     return send_file(buf, as_attachment=True, download_name='sample_questions.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-@app.route('/series/sample/word')
+@app.route('/series/sample/zip')
 @login_required
-def series_sample_word():
-    buf = generate_sample_docx()
-    return send_file(buf, as_attachment=True, download_name='sample_questions.docx', mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+def series_sample_zip():
+    """Download sample test ZIP: Excel + images folder (circuit.png)."""
+    buf = generate_sample_zip()
+    return send_file(buf, as_attachment=True, download_name='sample_test.zip', mimetype='application/zip')
 
 
 @app.route('/series/start', methods=['POST'])
@@ -2067,12 +1820,10 @@ def series_start():
     total_marks = int(request.form.get('marks', 0))
 
     try:
-        if filename.endswith('.xlsx') or filename.endswith('.xls'):
-            questions, images = parse_questions_from_excel(file)
-        elif filename.endswith('.docx'):
-            questions, images = parse_questions_from_docx(file)
+        if filename.endswith('.zip'):
+            questions, images = parse_questions_from_zip(file.stream)
         else:
-            return jsonify({"error": "Unsupported file format. Upload .xlsx or .docx"}), 400
+            return jsonify({"error": "Upload a .zip file containing Excel + images folder. Download sample for format."}), 400
     except Exception as e:
         return jsonify({"error": f"Failed to parse file: {str(e)}"}), 400
 

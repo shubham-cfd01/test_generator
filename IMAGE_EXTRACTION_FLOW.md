@@ -25,12 +25,12 @@
 ```
 test.zip
 ├── questions.xlsx      # Excel with id, type, question, options, answer, diagram, ...
-└── diagram/            # (or images/) – folder for diagram images
-    └── circuit.png     # referenced by diagram column
+└── images/            # (or diagram/) – folder for diagram images
+    └── circuit.png     # same name in diagram column for that row
 ```
 
 - **Excel** – Required columns: id, type, question, options, answer. Optional: subject, chapter, difficulty, marks, **diagram**
-- **Diagram column** – Filename only (e.g. `circuit.png` or `circuit`). File must exist in `diagram/` or `images/` inside the ZIP.
+- **Diagram column** – Exact filename (e.g. `circuit.png`). Must match a file in `images/` or `diagram/` inside the ZIP.
 
 ## Image Extraction Flow
 

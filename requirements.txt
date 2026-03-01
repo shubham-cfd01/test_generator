@@ -6,5 +6,4 @@ matplotlib
 numpy
 pandas
 openpyxl
-python-docx
 Pillow

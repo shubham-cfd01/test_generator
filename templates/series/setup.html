@@ -101,23 +101,24 @@
     <div class="container">
         <div class="card">
             <h2><i class="fa-solid fa-clipboard-list"></i> Test Series Setup <span style="font-size:12px;color:var(--muted);font-weight:400;">v2.0</span></h2>
-            <p class="desc">Upload your question file (Excel or Word), set time and marks, then start the test.</p>
+            <p class="desc">Upload a ZIP containing Excel + images folder, set time and marks, then start the test.</p>
 
-            <h4 style="font-size:14px;color:var(--muted);margin-bottom:12px;"><i class="fa-solid fa-download"></i> Download Sample Format</h4>
+            <h4 style="font-size:14px;color:var(--muted);margin-bottom:12px;"><i class="fa-solid fa-download"></i> Download Sample Test</h4>
             <div class="samples">
-                <a href="{{ url_for('series_sample_excel') }}" class="sample-btn">
-                    <i class="fa-solid fa-file-excel"></i>
-                    <div>Sample Excel<br><span class="sub">.xlsx format</span></div>
-                </a>
-                <a href="{{ url_for('series_sample_word') }}" class="sample-btn">
-                    <i class="fa-solid fa-file-word"></i>
-                    <div>Sample Word<br><span class="sub">.docx format</span></div>
+                <a href="{{ url_for('series_sample_zip') }}" class="sample-btn">
+                    <i class="fa-solid fa-file-zipper"></i>
+                    <div>Sample Test ZIP<br><span class="sub">Excel + images folder</span></div>
                 </a>
             </div>
 
             <div class="format-guide">
-                <h4><i class="fa-solid fa-circle-info"></i> File Format Guide</h4>
-                <p style="font-size:13px;color:var(--muted);margin-bottom:10px;"><strong>Excel (.xlsx)</strong> — Scalable format:</p>
+                <h4><i class="fa-solid fa-circle-info"></i> ZIP Format</h4>
+                <p style="font-size:13px;color:var(--muted);margin-bottom:10px;"><strong>Structure:</strong></p>
+                <pre style="font-size:12px;background:#EEF2FF;padding:12px;border-radius:8px;overflow-x:auto;">test.zip
+├── questions.xlsx    # Excel with columns below
+└── images/           # (or diagram/) folder for diagram images
+    └── circuit.png   # filename in diagram column</pre>
+                <p style="font-size:13px;color:var(--muted);margin-top:12px;"><strong>Excel columns:</strong></p>
                 <table>
                     <tr><th>Column</th><th>Description</th><th>Example</th></tr>
                     <tr><td>id</td><td>Question number</td><td>1</td></tr>
@@ -129,27 +130,19 @@
                     <tr><td>answer</td><td>Correct answer</td><td>4 ohm</td></tr>
                     <tr><td>difficulty</td><td>Easy/Medium/Hard (optional)</td><td>Medium</td></tr>
                     <tr><td>marks</td><td>Marks per question (optional)</td><td>4</td></tr>
-                    <tr><td>diagram</td><td>Paste image in this column (optional)</td><td>—</td></tr>
+                    <tr><td>diagram</td><td>Image filename from images folder</td><td><code>circuit.png</code></td></tr>
                 </table>
-
-                <p style="font-size:13px;color:var(--muted);margin-top:14px;"><strong>Word (.docx)</strong> — Write questions in order. Everything below a question (options, pasted images, answer) belongs to that question until the next Q starts.</p>
-                <p style="font-size:12px;color:var(--muted);margin-top:4px;">Tip: When pasting charts/diagrams, use <strong>Paste → Paste as Picture</strong> for best compatibility.</p>
-                <p style="font-size:12px;color:var(--muted);font-family:monospace;line-height:1.8;margin-top:4px;">
-                    Q1. Find the area of the circle below.<br>
-                    <span style="color:#64748b;">[paste or draw your diagram here]</span><br>
-                    A) 12.56 &nbsp; B) 28.27 &nbsp; C) 50.27<br>
-                    Answer: 28.27
-                </p>
+                <p style="font-size:12px;color:var(--muted);margin-top:10px;">Diagram column: use exact filename (e.g. <code>circuit.png</code>) that exists in the images folder.</p>
             </div>
 
             <div id="error-msg" class="error-msg"></div>
 
             <div class="upload-area" id="upload-area">
                 <i class="fa-solid fa-cloud-arrow-up"></i>
-                <p>Drag & drop your file here, or click to browse</p>
-                <p style="font-size:12px;margin-top:4px;">Supports .xlsx and .docx</p>
+                <p>Drag & drop your ZIP file here, or click to browse</p>
+                <p style="font-size:12px;margin-top:4px;">Supports .zip (Excel + images folder)</p>
                 <div class="filename" id="filename"></div>
-                <input type="file" id="file-input" accept=".xlsx,.xls,.docx">
+                <input type="file" id="file-input" accept=".zip">
             </div>
 
             <div class="settings">
