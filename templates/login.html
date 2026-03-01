@@ -19,12 +19,14 @@
         }
         .login-card .logo { font-size: 28px; font-weight: 700; color: var(--primary); margin-bottom: 8px; }
         .login-card .subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 32px; }
-        .login-card input[type="text"] {
+        .login-card input[type="text"],
+        .login-card input[type="password"] {
             width: 100%; padding: 14px 16px; border: 2px solid var(--border);
             border-radius: 10px; font-size: 15px; font-family: 'Outfit', sans-serif;
             outline: none; transition: border 0.2s;
         }
-        .login-card input[type="text"]:focus { border-color: var(--primary); }
+        .login-card input[type="text"]:focus,
+        .login-card input[type="password"]:focus { border-color: var(--primary); }
         .login-card button {
             width: 100%; padding: 14px; margin-top: 16px; background: var(--primary);
             color: white; border: none; border-radius: 10px; font-size: 16px;
