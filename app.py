@@ -1572,7 +1572,8 @@ def parse_questions_from_excel(file_stream):
             'answer': str(row.get('answer', '')),
             'options': [],
             'geometry': None,
-            'has_image': False
+            'has_image': False,
+            'image_count': 0,
         }
         opts = str(row.get('options', ''))
         if q['type'] == 'mcq' and opts:
@@ -1583,47 +1584,65 @@ def parse_questions_from_excel(file_stream):
             q['geometry'] = geo
         for candidate_row in [i + 1, i, i + 2]:
             if candidate_row in embedded_images:
-                images_store[q_id] = embedded_images[candidate_row]
+                images_store[q_id] = [embedded_images[candidate_row]]
                 q['has_image'] = True
+                q['image_count'] = 1
                 break
         questions.append(q)
     return questions, images_store
 
 
 def _extract_docx_paragraph_images(para, rels):
-    """Extract inline images from a docx paragraph. Returns list of bytes."""
+    """Extract ALL images from a docx paragraph (inline, anchored, VML, OLE). Returns list of bytes."""
+    seen_ids = set()
     images = []
+
+    def _add_blob_for_rid(rid):
+        if not rid or rid in seen_ids or rid not in rels:
+            return
+        seen_ids.add(rid)
+        try:
+            blob = rels[rid].target_part.blob
+            if blob:
+                images.append(blob)
+        except Exception:
+            pass
+
+    ns_a = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+    ns_r = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+    ns_v = '{urn:schemas-microsoft-com:vml}'
+    ns_o = '{urn:schemas-microsoft-com:office:office}'
+    el = para._element
+
+    # DrawingML blips (covers inline images, anchored images, grouped shapes)
     try:
-        from lxml import etree
-        nsmap = {
-            'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
-            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-            'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
-        }
-        for drawing in para._element.findall('.//' + '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing'):
-            for blip in drawing.findall('.//' + '{http://schemas.openxmlformats.org/drawingml/2006/main}blip'):
-                embed_id = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
-                if embed_id and embed_id in rels:
-                    rel = rels[embed_id]
-                    if hasattr(rel, 'target_ref'):
-                        img_part = rel.target_part
-                        images.append(img_part.blob)
+        for blip in el.iter(f'{ns_a}blip'):
+            _add_blob_for_rid(blip.get(f'{ns_r}embed'))
     except Exception:
         pass
 
-    # Also check for inline shapes via python-docx API
+    # VML imagedata (images inserted via older VML format, shapes with fills)
     try:
-        from docx.oxml.ns import qn
-        for r in para._element.iter(qn('wp:inline')):
-            for blip in r.iter(qn('a:blip')):
-                embed_id = blip.get(qn('r:embed'))
-                if embed_id and embed_id in rels:
-                    images.append(rels[embed_id].target_part.blob)
-        for r in para._element.iter(qn('wp:anchor')):
-            for blip in r.iter(qn('a:blip')):
-                embed_id = blip.get(qn('r:embed'))
-                if embed_id and embed_id in rels:
-                    images.append(rels[embed_id].target_part.blob)
+        for imgdata in el.iter(f'{ns_v}imagedata'):
+            _add_blob_for_rid(imgdata.get(f'{ns_r}id'))
+            _add_blob_for_rid(imgdata.get(f'{ns_r}href'))
+    except Exception:
+        pass
+
+    # OLE objects (embedded objects with image representations)
+    try:
+        for ole in el.iter(f'{ns_o}OLEObject'):
+            _add_blob_for_rid(ole.get(f'{ns_r}id'))
+    except Exception:
+        pass
+
+    # VML shape imagedata (alternate format)
+    try:
+        for shape in el.iter(f'{ns_v}shape'):
+            style = shape.get('style', '')
+            for child in shape:
+                if 'imagedata' in child.tag:
+                    _add_blob_for_rid(child.get(f'{ns_r}id'))
     except Exception:
         pass
 
@@ -1635,35 +1654,40 @@ def parse_questions_from_docx(file_stream):
     doc = Document(file_stream)
     rels = doc.part.rels
     questions = []
-    images_store = {}
+    images_store = {}  # q_id -> list of image bytes
     q_id = 0
     current_q = None
 
     for para in doc.paragraphs:
         text = para.text.strip()
 
-        # Check for embedded images in this paragraph
+        # Extract every image from this paragraph
         para_images = _extract_docx_paragraph_images(para, rels)
-        if para_images and current_q:
-            images_store[current_q['id']] = para_images[0]
-            current_q['has_image'] = True
 
-        if not text:
-            continue
+        # Is this the start of a new question?
+        is_new_q = bool(text) and text.lower().startswith('q') and ('.' in text[:5] or ')' in text[:5])
 
-        if text.lower().startswith('q') and ('.' in text[:5] or ')' in text[:5]):
+        if is_new_q:
             if current_q:
+                current_q['image_count'] = len(images_store.get(current_q['id'], []))
                 questions.append(current_q)
             q_id += 1
             q_text = _re.sub(r'^[Qq]\d+[\.\)]\s*', '', text).strip()
-            current_q = {'id': q_id, 'type': 'fill_in_the_blanks', 'question': q_text, 'options': [], 'answer': '', 'geometry': None, 'has_image': False}
-            # Check if this question paragraph itself has images
-            q_images = _extract_docx_paragraph_images(para, rels)
-            if q_images:
-                images_store[q_id] = q_images[0]
-                current_q['has_image'] = True
+            current_q = {
+                'id': q_id, 'type': 'fill_in_the_blanks',
+                'question': q_text, 'options': [], 'answer': '',
+                'geometry': None, 'has_image': False, 'image_count': 0,
+            }
 
-        elif text.lower().startswith('answer:') or text.lower().startswith('ans:'):
+        # Everything (images, text) belongs to the current question
+        if para_images and current_q:
+            images_store.setdefault(current_q['id'], []).extend(para_images)
+            current_q['has_image'] = True
+
+        if not text or is_new_q:
+            continue
+
+        if text.lower().startswith('answer:') or text.lower().startswith('ans:'):
             if current_q:
                 ans = _re.sub(r'^(?:answer|ans)\s*:\s*', '', text, flags=_re.IGNORECASE).strip()
                 current_q['answer'] = ans
@@ -1685,6 +1709,7 @@ def parse_questions_from_docx(file_stream):
             current_q['question'] = text
 
     if current_q:
+        current_q['image_count'] = len(images_store.get(current_q['id'], []))
         questions.append(current_q)
     return questions, images_store
 
@@ -1806,29 +1831,37 @@ def series_start():
     return jsonify({"test_id": test_id})
 
 
+def _detect_image_mimetype(data):
+    if data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if data[:4] == b'GIF8':
+        return 'image/gif'
+    if data[:4] == b'RIFF' and len(data) > 11 and data[8:12] == b'WEBP':
+        return 'image/webp'
+    if data[:2] == b'BM':
+        return 'image/bmp'
+    return 'image/png'
+
+
 @app.route('/series/image/<test_id>/<int:q_id>')
+@app.route('/series/image/<test_id>/<int:q_id>/<int:idx>')
 @login_required
-def series_image(test_id, q_id):
+def series_image(test_id, q_id, idx=0):
     """Serve an embedded image extracted from an uploaded file."""
     ts = test_sessions.get(test_id)
     if not ts:
         return "Not found", 404
-    img_bytes = ts.get('images', {}).get(q_id)
-    if not img_bytes:
+    img_list = ts.get('images', {}).get(q_id)
+    if not img_list:
         return "No image", 404
-    mimetype = 'image/png'
-    if img_bytes[:3] == b'\xff\xd8\xff':
-        mimetype = 'image/jpeg'
-    elif img_bytes[:4] == b'GIF8':
-        mimetype = 'image/gif'
-    elif img_bytes[:4] == b'RIFF' and img_bytes[8:12] == b'WEBP':
-        mimetype = 'image/webp'
-    elif img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-        mimetype = 'image/png'
-    elif img_bytes[:2] in (b'BM',):
-        mimetype = 'image/bmp'
+    # Backward compat: if stored as raw bytes instead of list
+    if isinstance(img_list, bytes):
+        img_list = [img_list]
+    if idx < 0 or idx >= len(img_list):
+        return "Image index out of range", 404
+    img_bytes = img_list[idx]
     buf = BytesIO(img_bytes)
-    return send_file(buf, mimetype=mimetype)
+    return send_file(buf, mimetype=_detect_image_mimetype(img_bytes))
 
 
 @app.route('/series/diagram/<test_id>/<int:q_id>')
