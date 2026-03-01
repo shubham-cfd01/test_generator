@@ -8,6 +8,7 @@ import re as _re
 import sqlite3
 import hashlib
 import functools
+import pandas as pd
 from flask import Flask, render_template, request, send_file, jsonify, Response, redirect, url_for, session
 from groq import Groq
 from io import BytesIO
@@ -46,14 +47,15 @@ def init_db():
         contact TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL DEFAULT '',
         name TEXT DEFAULT '',
+        products TEXT NOT NULL DEFAULT 'both',
         added_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         is_active INTEGER DEFAULT 1
     )''')
-    # migrate: add password column if missing (existing DB)
-    try:
-        conn.execute('ALTER TABLE allowed_users ADD COLUMN password TEXT NOT NULL DEFAULT ""')
-    except sqlite3.OperationalError:
-        pass
+    for col, default in [('password', '""'), ('products', '"both"')]:
+        try:
+            conn.execute(f'ALTER TABLE allowed_users ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}')
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -67,6 +69,7 @@ def get_db():
 
 
 def verify_user(contact, password):
+    """Returns the user row if valid, else None."""
     contact = contact.strip().lower()
     conn = get_db()
     user = conn.execute(
@@ -74,9 +77,15 @@ def verify_user(contact, password):
         (contact,)
     ).fetchone()
     conn.close()
-    if user is None:
-        return False
-    return user['password'] == password
+    if user is None or user['password'] != password:
+        return None
+    return user
+
+
+def user_has_product(product):
+    """Check if the logged-in user has access to a specific product."""
+    user_products = session.get('user_products', '')
+    return user_products == 'both' or user_products == product
 
 
 def login_required(f):
@@ -1345,7 +1354,118 @@ def create_branded_pdf(questions, topic, branding_opts=None):
 def home():
     if not session.get('user_logged_in'):
         return redirect(url_for('login_page'))
-    return render_template('index.html')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    products = session.get('user_products', 'both')
+    return render_template('dashboard.html', products=products)
+
+
+@app.route('/generator')
+@login_required
+def generator_home():
+    if not user_has_product('generator'):
+        return render_template('no_access.html', product='Test Generator'), 403
+    return render_template('generator/index.html')
+
+
+# ─── TEST SERIES ROUTES ─────────────────────────────────
+def load_questions_from_excel():
+    try:
+        xl_path = os.path.join(os.path.dirname(__file__), 'data', 'questions.xlsx')
+        df = pd.read_excel(xl_path)
+        df = df.fillna('')
+        questions_list = df.to_dict('records')
+        for q in questions_list:
+            if q['type'] == 'mcq' and q['options']:
+                q['options'] = [opt.strip() for opt in str(q['options']).split('|')]
+            else:
+                q['options'] = []
+        return questions_list
+    except Exception as e:
+        print(f"Error loading Excel file: {e}")
+        return []
+
+
+@app.route('/series')
+@login_required
+def series_home():
+    if not user_has_product('series'):
+        return render_template('no_access.html', product='Test Series'), 403
+    questions_data = load_questions_from_excel()
+    return render_template('series/index.html', questions=questions_data)
+
+
+@app.route('/series/submit', methods=['POST'])
+@login_required
+def series_submit():
+    try:
+        questions_data = load_questions_from_excel()
+        user_answers = request.get_json()
+        score = 0
+        total_questions = len(questions_data)
+        results = []
+        for q in questions_data:
+            q_id = str(q['id'])
+            user_ans = str(user_answers.get(q_id, "")).strip().lower()
+            correct_ans = str(q['answer']).strip().lower()
+            is_correct = user_ans == correct_ans
+            if is_correct:
+                score += 1
+            results.append({
+                "id": q['id'],
+                "is_correct": is_correct,
+                "correct_answer": q['answer'],
+                "user_answer": user_answers.get(q_id, "")
+            })
+        return jsonify({
+            "score": score,
+            "total": total_questions,
+            "percentage": round((score / total_questions) * 100, 2) if total_questions else 0,
+            "results": results
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/series/download_test')
+@login_required
+def series_download():
+    questions_data = load_questions_from_excel()
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    p.setFont("Helvetica-Bold", 18)
+    p.drawString(200, height - 50, "Arth Academy - Class 8 Math Test")
+    p.setFont("Helvetica", 12)
+    p.drawString(50, height - 80, "Name: ________________________")
+    p.drawString(400, height - 80, "Date: _____________")
+    y = height - 120
+    for i, q in enumerate(questions_data, 1):
+        if y < 100:
+            p.showPage()
+            y = height - 50
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, y, f"Q{i}: {q['question']}")
+        y -= 25
+        p.setFont("Helvetica", 12)
+        if q['type'] == 'mcq':
+            options = q['options']
+            labels = ["A)", "B)", "C)", "D)"]
+            opt_x = 70
+            for j in range(min(len(options), 4)):
+                p.drawString(opt_x, y, f"{labels[j]} {options[j]}")
+                opt_x += 120
+            y -= 30
+        else:
+            y -= 40
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name='Arth_Academy_Math_Test.pdf', mimetype='application/pdf')
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -1355,10 +1475,12 @@ def login_page():
         password = request.form.get('password', '').strip()
         if not contact or not password:
             return render_template('login.html', error='Please enter both email/phone and password.')
-        if verify_user(contact, password):
+        user = verify_user(contact, password)
+        if user:
             session['user_logged_in'] = True
             session['user_contact'] = contact
-            return redirect(url_for('home'))
+            session['user_products'] = user['products'] or 'both'
+            return redirect(url_for('dashboard'))
         else:
             return render_template('login.html', error='Invalid credentials or access denied. Contact admin.')
     return render_template('login.html')
@@ -1398,14 +1520,15 @@ def admin_add_user():
     contact = request.form.get('contact', '').strip().lower()
     name = request.form.get('name', '').strip()
     password = request.form.get('password', '').strip()
+    products = request.form.get('products', 'both').strip()
     if not contact or not password:
         return redirect(url_for('admin_panel'))
     conn = get_db()
     try:
-        conn.execute('INSERT INTO allowed_users (contact, name, password) VALUES (?, ?, ?)', (contact, name, password))
+        conn.execute('INSERT INTO allowed_users (contact, name, password, products) VALUES (?, ?, ?, ?)', (contact, name, password, products))
         conn.commit()
     except sqlite3.IntegrityError:
-        conn.execute('UPDATE allowed_users SET is_active = 1, name = ?, password = ? WHERE LOWER(contact) = ?', (name, password, contact))
+        conn.execute('UPDATE allowed_users SET is_active = 1, name = ?, password = ?, products = ? WHERE LOWER(contact) = ?', (name, password, products, contact))
         conn.commit()
     conn.close()
     return redirect(url_for('admin_panel'))

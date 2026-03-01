@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Arth Academy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root { --primary: #4F46E5; --primary-light: #6366F1; --primary-dark: #4338CA; --background: #F8FAFC; --text-main: #0F172A; --text-muted: #64748B; --border: #E2E8F0; }
+        * { margin:0; padding:0; box-sizing:border-box; font-family:'Outfit',sans-serif; }
+        body { background:var(--background); color:var(--text-main); min-height:100vh; }
+        .header {
+            background:white; box-shadow:0 1px 3px rgba(0,0,0,0.1); padding:16px 24px;
+            display:flex; justify-content:space-between; align-items:center;
+        }
+        .logo { font-size:24px; font-weight:700; color:var(--primary); display:flex; align-items:center; gap:8px; }
+        .header-right { display:flex; align-items:center; gap:12px; }
+        .header-right .user-info { color:var(--text-muted); font-size:14px; }
+        .header-right a {
+            color:var(--text-muted); text-decoration:none; font-size:14px;
+            padding:8px 16px; border:1px solid var(--border); border-radius:8px;
+        }
+        .header-right a:hover { background:#f1f5f9; }
+        .dashboard { max-width:900px; margin:60px auto; padding:0 20px; text-align:center; }
+        .dashboard h1 { font-size:32px; margin-bottom:8px; }
+        .dashboard p { color:var(--text-muted); font-size:16px; margin-bottom:48px; }
+        .products { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+        .product-card {
+            background:white; border-radius:20px; padding:40px 32px;
+            box-shadow:0 4px 24px rgba(79,70,229,0.08); border:2px solid transparent;
+            transition:all 0.3s; text-align:center; text-decoration:none; color:var(--text-main);
+            display:flex; flex-direction:column; align-items:center;
+        }
+        .product-card:hover { border-color:var(--primary); transform:translateY(-4px); box-shadow:0 8px 32px rgba(79,70,229,0.15); }
+        .product-card .icon {
+            width:80px; height:80px; border-radius:20px; display:flex; align-items:center; justify-content:center;
+            font-size:36px; margin-bottom:20px;
+        }
+        .product-card.generator .icon { background:#EEF2FF; color:var(--primary); }
+        .product-card.series .icon { background:#ECFDF5; color:#10B981; }
+        .product-card h3 { font-size:20px; margin-bottom:8px; }
+        .product-card p { color:var(--text-muted); font-size:14px; margin-bottom:20px; line-height:1.6; }
+        .product-card .badge {
+            padding:6px 16px; border-radius:20px; font-size:13px; font-weight:600;
+        }
+        .product-card.generator .badge { background:#EEF2FF; color:var(--primary); }
+        .product-card.series .badge { background:#ECFDF5; color:#10B981; }
+        .product-card.locked { opacity:0.45; pointer-events:none; }
+        .product-card.locked .badge { background:#FEE2E2; color:#DC2626; }
+        @media (max-width:600px) { .products { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo"><i class="fa-solid fa-graduation-cap"></i> Arth Academy</div>
+        <div class="header-right">
+            <span class="user-info"><i class="fa-solid fa-user"></i> {{ session.get('user_contact', '') }}</span>
+            <a href="{{ url_for('logout') }}"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+        </div>
+    </header>
+
+    <div class="dashboard">
+        <h1>Welcome to Arth Academy</h1>
+        <p>Choose a product to get started</p>
+
+        <div class="products">
+            <a href="{{ url_for('generator_home') }}" class="product-card generator {{ '' if products in ['generator', 'both'] else 'locked' }}">
+                <div class="icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                <h3>AI Test Generator</h3>
+                <p>Generate custom PDF test papers using AI. Select topics, difficulty, and question types.</p>
+                {% if products in ['generator', 'both'] %}
+                <span class="badge"><i class="fa-solid fa-check"></i> Access Granted</span>
+                {% else %}
+                <span class="badge"><i class="fa-solid fa-lock"></i> No Access</span>
+                {% endif %}
+            </a>
+
+            <a href="{{ url_for('series_home') }}" class="product-card series {{ '' if products in ['series', 'both'] else 'locked' }}">
+                <div class="icon"><i class="fa-solid fa-clipboard-list"></i></div>
+                <h3>Test Series</h3>
+                <p>Take timed online math tests with instant scoring, feedback, and PDF download.</p>
+                {% if products in ['series', 'both'] %}
+                <span class="badge"><i class="fa-solid fa-check"></i> Access Granted</span>
+                {% else %}
+                <span class="badge"><i class="fa-solid fa-lock"></i> No Access</span>
+                {% endif %}
+            </a>
+        </div>
+    </div>
+</body>
+</html>

@@ -4,3 +4,5 @@ groq
 reportlab
 matplotlib
 numpy
+pandas
+openpyxl

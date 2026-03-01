@@ -102,6 +102,14 @@
                 <label>Name (optional)</label>
                 <input type="text" name="name" placeholder="Student / Teacher name">
             </div>
+            <div class="field">
+                <label>Product Access</label>
+                <select name="products" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-size:14px;font-family:'Outfit',sans-serif;">
+                    <option value="both">Both Products</option>
+                    <option value="generator">Test Generator Only</option>
+                    <option value="series">Test Series Only</option>
+                </select>
+            </div>
             <button type="submit"><i class="fa-solid fa-user-plus"></i> Add User</button>
         </form>
 
@@ -113,6 +121,7 @@
                         <th>#</th>
                         <th>Contact</th>
                         <th>Name</th>
+                        <th>Products</th>
                         <th>Added On</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -124,6 +133,16 @@
                         <td>{{ loop.index }}</td>
                         <td>{{ user['contact'] }}</td>
                         <td>{{ user['name'] or '—' }}</td>
+                        <td>
+                            {% set p = user['products'] or 'both' %}
+                            {% if p == 'both' %}
+                            <span style="background:#EEF2FF;color:#4F46E5;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;">Both</span>
+                            {% elif p == 'generator' %}
+                            <span style="background:#EEF2FF;color:#4F46E5;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;">Generator</span>
+                            {% else %}
+                            <span style="background:#ECFDF5;color:#10B981;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;">Series</span>
+                            {% endif %}
+                        </td>
                         <td>{{ user['added_on'][:10] if user['added_on'] else '—' }}</td>
                         <td>
                             {% if user['is_active'] %}

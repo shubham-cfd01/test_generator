@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arth Academy - Class 8 Math Test</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/series.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <div class="logo">
+                <i class="fa-solid fa-graduation-cap"></i> Arth Academy
+            </div>
+            <div style="display:flex;gap:10px;margin-left:auto;">
+                <a href="/series/download_test" class="btn btn-secondary" style="font-size:0.9rem;padding:0.5rem 1rem;">
+                    <i class="fa-solid fa-file-pdf"></i> Download PDF
+                </a>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary" style="font-size:0.9rem;padding:0.5rem 1rem;">
+                    <i class="fa-solid fa-house"></i> Dashboard
+                </a>
+            </div>
+        </div>
+        <div class="test-info">
+            <h1>Class 8 Mathematics: Foundations</h1>
+            <div class="timer" id="timer"><i class="fa-regular fa-clock"></i> 10:00</div>
+        </div>
+    </header>
+
+    <main class="container">
+        <form id="test-form">
+            <div class="questions-container">
+                {% for q in questions %}
+                <div class="question-card" id="q-card-{{ q.id }}">
+                    <div class="question-header">
+                        <span class="question-number">Question {{ loop.index }}</span>
+                        <span class="question-type badge badge-{{ q.type }}">{{ 'Multiple Choice' if q.type == 'mcq' else 'Fill in the blanks' }}</span>
+                    </div>
+                    <div class="question-text">{{ q.question }}</div>
+                    <div class="options-container">
+                        {% if q.type == 'mcq' %}
+                        {% for opt in q.options %}
+                        <label class="option-label">
+                            <input type="radio" name="{{ q.id }}" value="{{ opt }}" required>
+                            <span class="custom-radio"></span>
+                            <span class="option-text">{{ opt }}</span>
+                        </label>
+                        {% endfor %}
+                        {% elif q.type == 'fill_in_the_blanks' %}
+                        <div class="input-container">
+                            <input type="text" name="{{ q.id }}" class="text-input" placeholder="Type your answer here..." required autocomplete="off">
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="feedback hidden" id="feedback-{{ q.id }}"></div>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-primary" id="submit-btn" onclick="submitTest()">
+                    <i class="fa-solid fa-paper-plane"></i> Submit Test
+                </button>
+            </div>
+        </form>
+
+        <div id="results-container" class="results-card hidden">
+            <div class="celebration"><i class="fa-solid fa-trophy"></i></div>
+            <h2>Test Completed!</h2>
+            <div class="score-display">
+                <span id="score-text">0</span> / <span id="total-text">0</span>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <p id="percentage-text" class="percentage-text">0%</p>
+            <p id="message-text" class="message-text">Great job!</p>
+            <button class="btn btn-secondary" onclick="window.location.reload()">
+                <i class="fa-solid fa-rotate-right"></i> Try Again
+            </button>
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Arth Academy. Excellence in Mathematics.</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/series.js') }}"></script>
+</body>
+</html>
