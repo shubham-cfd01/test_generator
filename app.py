@@ -1905,10 +1905,14 @@ def admin_login():
 @app.route('/admin/panel')
 @admin_required
 def admin_panel():
+    show_archived = request.args.get('archived', '0') == '1'
     conn = get_db()
-    users = conn.execute('SELECT * FROM allowed_users ORDER BY added_on DESC').fetchall()
+    if show_archived:
+        users = conn.execute('SELECT * FROM allowed_users ORDER BY added_on DESC').fetchall()
+    else:
+        users = conn.execute('SELECT * FROM allowed_users WHERE is_active >= 0 ORDER BY added_on DESC').fetchall()
     conn.close()
-    return render_template('admin_panel.html', users=users)
+    return render_template('admin_panel.html', users=users, show_archived=show_archived)
 
 
 @app.route('/admin/add', methods=['POST'])
@@ -1925,6 +1929,8 @@ def admin_add_user():
         conn.execute('INSERT INTO allowed_users (contact, name, password, products) VALUES (?, ?, ?, ?)', (contact, name, password, products))
         conn.commit()
     except sqlite3.IntegrityError:
+        if not products:
+            products = 'both'
         conn.execute('UPDATE allowed_users SET is_active = 1, name = ?, password = ?, products = ? WHERE LOWER(contact) = ?', (name, password, products, contact))
         conn.commit()
     conn.close()
@@ -1955,7 +1961,7 @@ def admin_activate_user(user_id):
 @admin_required
 def admin_delete_user(user_id):
     conn = get_db()
-    conn.execute('DELETE FROM allowed_users WHERE id = ?', (user_id,))
+    conn.execute('UPDATE allowed_users SET is_active = -1 WHERE id = ?', (user_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('admin_panel'))
