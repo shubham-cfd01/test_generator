@@ -1,6 +1,28 @@
-# Image Extraction Flow (Excel & Word)
+# Test Series - Data Format
 
-## Excel (.xlsx)
+## Question Structure (Scalable)
+
+```json
+{
+  "subject": "Physics",
+  "chapter": "Current Electricity",
+  "question_text": "Find the equivalent resistance of the circuit shown.",
+  "question_type": "MCQ",
+  "difficulty": "Medium",
+  "marks": 4,
+  "image_url": "/series/image/{test_id}/{q_id}",
+  "options": [
+    {"text": "2 ohm", "is_correct": false},
+    {"text": "4 ohm", "is_correct": true},
+    {"text": "6 ohm", "is_correct": false},
+    {"text": "8 ohm", "is_correct": false}
+  ]
+}
+```
+
+## Image Extraction Flow
+
+### Excel (.xlsx)
 
 1. **ZIP parse** – Open xlsx as ZIP, read `xl/media/*` and `xl/drawings/*`
 2. **Relationships** – Map rId → media path from `xl/drawings/_rels/*.rels`

@@ -1386,6 +1386,50 @@ def generator_home():
 test_sessions = {}
 
 
+def _to_standard_question(q, test_id=None):
+    """Convert question to scalable structure: subject, chapter, question_text, question_type, options with is_correct."""
+    q_type = str(q.get('type', 'mcq')).strip().lower()
+    question_type = 'MCQ' if q_type == 'mcq' else 'fill_in_the_blanks'
+    opts_raw = q.get('options', [])
+    answer = str(q.get('answer', '')).strip()
+
+    options = []
+    if q_type == 'mcq':
+        for o in opts_raw:
+            if isinstance(o, dict):
+                options.append({'text': str(o.get('text', '')), 'is_correct': bool(o.get('is_correct'))})
+            else:
+                opt_text = str(o).strip()
+                options.append({'text': opt_text, 'is_correct': opt_text.lower() == answer.lower()})
+
+    correct_display = answer
+    if options:
+        for o in options:
+            if o.get('is_correct'):
+                correct_display = o['text']
+                break
+
+    out = {
+        'id': q.get('id'),
+        'type': q_type,
+        'subject': str(q.get('subject', '')).strip(),
+        'chapter': str(q.get('chapter', '')).strip(),
+        'question_text': str(q.get('question_text', q.get('question', ''))).strip(),
+        'question': str(q.get('question_text', q.get('question', ''))).strip(),
+        'question_type': question_type,
+        'difficulty': str(q.get('difficulty', '')).strip(),
+        'marks': int(q.get('marks', 0)) if q.get('marks') else 0,
+        'options': options,
+        'answer': answer,
+        'correct_display': correct_display,
+        'has_image': bool(q.get('has_image')),
+        'image_count': int(q.get('image_count', 0)),
+    }
+    if test_id and out['has_image']:
+        out['image_url'] = f'/series/image/{test_id}/{out["id"]}'
+    return out
+
+
 def _parse_diagram_string(raw):
     """Parse a diagram column value into a geometry dict.
     Accepts JSON string or simple syntax like: triangle:base=6,height=4,labels=A;B;C
@@ -1567,18 +1611,26 @@ def parse_questions_from_excel(file_stream):
     # Try multiple row mappings: i+2 (Excel row 2 for df 0), i+1, i+3, i, i+4
     for i, row in df.iterrows():
         q_id = int(row.get('id', i + 1))
+        q_type = str(row.get('type', 'mcq')).strip().lower()
+        opts = str(row.get('options', ''))
+        opts_list = [o.strip() for o in opts.split('|')] if opts else []
         q = {
             'id': q_id,
-            'type': str(row.get('type', 'mcq')).strip().lower(),
+            'subject': str(row.get('subject', '')).strip(),
+            'chapter': str(row.get('chapter', '')).strip(),
+            'type': q_type,
             'question': str(row.get('question', '')),
             'answer': str(row.get('answer', '')),
-            'options': [],
+            'options': opts_list,
+            'difficulty': str(row.get('difficulty', '')).strip(),
+            'marks': row.get('marks', 0),
             'has_image': False,
             'image_count': 0,
         }
-        opts = str(row.get('options', ''))
-        if q['type'] == 'mcq' and opts:
-            q['options'] = [o.strip() for o in opts.split('|')]
+        try:
+            q['marks'] = int(q['marks']) if q['marks'] else 0
+        except (ValueError, TypeError):
+            q['marks'] = 0
 
         imgs = None
         for candidate_row in [i + 2, i + 1, i + 3, i, i + 4, i + 5]:
@@ -1798,6 +1850,7 @@ def parse_questions_from_docx(file_stream):
             q_text = _re.sub(r'^[Qq]\d+[\.\)]\s*', '', text).strip()
             current_q = {
                 'id': q_id, 'type': 'fill_in_the_blanks',
+                'subject': '', 'chapter': '', 'difficulty': '', 'marks': 0,
                 'question': q_text, 'options': [], 'answer': '',
                 'has_image': False, 'image_count': 0,
             }
@@ -1841,13 +1894,13 @@ def parse_questions_from_docx(file_stream):
 
 def generate_sample_excel():
     data = [
-        {"id": 1, "type": "mcq", "question": "Which of the following is a rational number?", "options": "√2|π|0|√3", "answer": "0", "diagram": ""},
-        {"id": 2, "type": "mcq", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225", "diagram": ""},
-        {"id": 3, "type": "mcq", "question": "If 3x + 5 = 20, what is the value of x?", "options": "3|5|15|4", "answer": "5", "diagram": ""},
-        {"id": 4, "type": "fill_in_the_blanks", "question": "The cube root of 512 is ____.", "options": "", "answer": "8", "diagram": ""},
-        {"id": 5, "type": "fill_in_the_blanks", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12", "diagram": ""},
-        {"id": 6, "type": "mcq", "question": "What is the area of the circle shown below?", "options": "12.56|15.70|28.27|50.27", "answer": "28.27", "diagram": ""},
-        {"id": 7, "type": "fill_in_the_blanks", "question": "Find the perimeter of the rectangle shown below.", "options": "", "answer": "22", "diagram": ""},
+        {"id": 1, "type": "mcq", "subject": "Mathematics", "chapter": "Rational Numbers", "question": "Which of the following is a rational number?", "options": "√2|π|0|√3", "answer": "0", "difficulty": "Easy", "marks": 1, "diagram": ""},
+        {"id": 2, "type": "mcq", "subject": "Mathematics", "chapter": "Squares", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225", "difficulty": "Easy", "marks": 1, "diagram": ""},
+        {"id": 3, "type": "mcq", "subject": "Mathematics", "chapter": "Linear Equations", "question": "If 3x + 5 = 20, what is the value of x?", "options": "3|5|15|4", "answer": "5", "difficulty": "Medium", "marks": 2, "diagram": ""},
+        {"id": 4, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Cubes", "question": "The cube root of 512 is ____.", "options": "", "answer": "8", "difficulty": "Easy", "marks": 1, "diagram": ""},
+        {"id": 5, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Mensuration", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12", "difficulty": "Medium", "marks": 2, "diagram": ""},
+        {"id": 6, "type": "mcq", "subject": "Mathematics", "chapter": "Mensuration", "question": "What is the area of the circle shown below?", "options": "12.56|15.70|28.27|50.27", "answer": "28.27", "difficulty": "Medium", "marks": 4, "diagram": ""},
+        {"id": 7, "type": "fill_in_the_blanks", "subject": "Mathematics", "chapter": "Mensuration", "question": "Find the perimeter of the rectangle shown below.", "options": "", "answer": "22", "difficulty": "Medium", "marks": 2, "diagram": ""},
     ]
     df = pd.DataFrame(data)
     buf = BytesIO()
@@ -1965,12 +2018,16 @@ def series_start():
         return jsonify({"error": "No questions found in the file. Check the format."}), 400
 
     test_id = str(uuid.uuid4())
+    normalized = [_to_standard_question(q, test_id=None) for q in questions]
     test_sessions[test_id] = {
-        'questions': questions,
+        'questions': normalized,
         'timer': timer_mins,
         'marks': total_marks,
         'images': images,
     }
+    for q in test_sessions[test_id]['questions']:
+        if q.get('has_image'):
+            q['image_url'] = f'/series/image/{test_id}/{q["id"]}'
     return jsonify({"test_id": test_id})
 
 
@@ -2110,14 +2167,15 @@ def series_submit(test_id):
         for q in questions_data:
             q_id = str(q['id'])
             user_ans = str(user_answers.get(q_id, "")).strip().lower()
-            correct_ans = str(q['answer']).strip().lower()
-            is_correct = user_ans == correct_ans
+            correct_display = str(q.get('correct_display', q.get('answer', ''))).strip()
+            correct_ans = str(q.get('answer', '')).strip().lower()
+            is_correct = user_ans == correct_ans or user_ans == correct_display.lower()
             if is_correct:
                 score += 1
             results.append({
                 "id": q['id'],
                 "is_correct": is_correct,
-                "correct_answer": q['answer'],
+                "correct_answer": correct_display or q.get('answer', ''),
                 "user_answer": user_answers.get(q_id, "")
             })
         marks_per_q = ts['marks'] / total_questions if ts['marks'] and total_questions else 0
@@ -2160,14 +2218,16 @@ def series_download(test_id):
             p.showPage()
             y = height - 50
         p.setFont("Helvetica-Bold", 12)
-        p.drawString(50, y, f"Q{i}: {q['question']}")
+        p.drawString(50, y, f"Q{i}: {q.get('question_text', q.get('question', ''))}")
         y -= 25
         p.setFont("Helvetica", 12)
-        if q['type'] == 'mcq':
+        if str(q.get('type') or q.get('question_type', '')).lower() == 'mcq':
             labels = ["A)", "B)", "C)", "D)"]
             opt_x = 70
-            for j in range(min(len(q['options']), 4)):
-                p.drawString(opt_x, y, f"{labels[j]} {q['options'][j]}")
+            for j in range(min(len(q.get('options', [])), 4)):
+                opt = q['options'][j]
+                opt_text = opt.get('text', opt) if isinstance(opt, dict) else opt
+                p.drawString(opt_x, y, f"{labels[j]} {opt_text}")
                 opt_x += 120
             y -= 30
         else:

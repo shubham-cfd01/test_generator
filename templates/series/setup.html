@@ -117,15 +117,19 @@
 
             <div class="format-guide">
                 <h4><i class="fa-solid fa-circle-info"></i> File Format Guide</h4>
-                <p style="font-size:13px;color:var(--muted);margin-bottom:10px;"><strong>Excel (.xlsx)</strong> — Use these columns:</p>
+                <p style="font-size:13px;color:var(--muted);margin-bottom:10px;"><strong>Excel (.xlsx)</strong> — Scalable format:</p>
                 <table>
                     <tr><th>Column</th><th>Description</th><th>Example</th></tr>
                     <tr><td>id</td><td>Question number</td><td>1</td></tr>
                     <tr><td>type</td><td><code>mcq</code> or <code>fill_in_the_blanks</code></td><td>mcq</td></tr>
-                    <tr><td>question</td><td>Question text</td><td>What is 5+3?</td></tr>
-                    <tr><td>options</td><td>Pipe-separated (MCQ only)</td><td><code>6|7|8|9</code></td></tr>
-                    <tr><td>answer</td><td>Correct answer</td><td>8</td></tr>
-                    <tr><td>diagram</td><td>Paste your diagram image in this column (optional)</td><td>—</td></tr>
+                    <tr><td>subject</td><td>Subject (optional)</td><td>Physics</td></tr>
+                    <tr><td>chapter</td><td>Chapter (optional)</td><td>Current Electricity</td></tr>
+                    <tr><td>question</td><td>Question text</td><td>Find the equivalent resistance...</td></tr>
+                    <tr><td>options</td><td>Pipe-separated (MCQ only)</td><td><code>2 ohm|4 ohm|6 ohm|8 ohm</code></td></tr>
+                    <tr><td>answer</td><td>Correct answer</td><td>4 ohm</td></tr>
+                    <tr><td>difficulty</td><td>Easy/Medium/Hard (optional)</td><td>Medium</td></tr>
+                    <tr><td>marks</td><td>Marks per question (optional)</td><td>4</td></tr>
+                    <tr><td>diagram</td><td>Paste image in this column (optional)</td><td>—</td></tr>
                 </table>
 
                 <p style="font-size:13px;color:var(--muted);margin-top:14px;"><strong>Word (.docx)</strong> — Write questions in order. Everything below a question (options, pasted images, answer) belongs to that question until the next Q starts.</p>

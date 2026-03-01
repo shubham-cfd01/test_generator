@@ -42,9 +42,13 @@
                 <div class="question-card" id="q-card-{{ q.id }}">
                     <div class="question-header">
                         <span class="question-number">Question {{ loop.index }}</span>
-                        <span class="question-type badge badge-{{ q.type }}">{{ 'Multiple Choice' if q.type == 'mcq' else 'Fill in the blanks' }}</span>
+                        {% if q.subject or q.chapter %}
+                        <span class="question-meta" style="font-size:0.75rem;color:var(--text-muted);">{{ q.subject }}{% if q.chapter %} › {{ q.chapter }}{% endif %}</span>
+                        {% endif %}
+                        <span class="question-type badge badge-{{ q.type if q.type else 'mcq' }}">{{ q.question_type if q.question_type else ('Multiple Choice' if (q.type or 'mcq') == 'mcq' else 'Fill in the blanks') }}</span>
+                        {% if q.marks %}<span style="font-size:0.75rem;color:var(--text-muted);">{{ q.marks }} mark{{ 's' if q.marks != 1 else '' }}</span>{% endif %}
                     </div>
-                    <div class="question-text">{{ q.question }}</div>
+                    <div class="question-text">{{ q.question_text or q.question }}</div>
                     {% if q.image_count and q.image_count > 0 %}
                     {% for img_idx in range(q.image_count) %}
                     <div class="diagram-container" style="text-align:center;margin:16px 0;padding:12px;background:#F8FAFC;border-radius:12px;border:1px solid #E2E8F0;">
@@ -57,15 +61,16 @@
                     </div>
                     {% endif %}
                     <div class="options-container">
-                        {% if q.type == 'mcq' %}
+                        {% if (q.type or q.question_type) == 'mcq' or q.question_type == 'MCQ' %}
                         {% for opt in q.options %}
+                        {% set opt_text = opt.text if opt is mapping else opt %}
                         <label class="option-label">
-                            <input type="radio" name="{{ q.id }}" value="{{ opt }}" required>
+                            <input type="radio" name="{{ q.id }}" value="{{ opt_text }}" required>
                             <span class="custom-radio"></span>
-                            <span class="option-text">{{ opt }}</span>
+                            <span class="option-text">{{ opt_text }}</span>
                         </label>
                         {% endfor %}
-                        {% elif q.type == 'fill_in_the_blanks' %}
+                        {% elif (q.type or q.question_type) == 'fill_in_the_blanks' %}
                         <div class="input-container">
                             <input type="text" name="{{ q.id }}" class="text-input" placeholder="Type your answer here..." required autocomplete="off">
                         </div>
