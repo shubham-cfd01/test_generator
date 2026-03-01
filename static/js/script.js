@@ -5,33 +5,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressText = document.getElementById('progress-text');
     const progressFill = document.getElementById('progress-fill');
 
-    // Restore API key from local storage if available
-    const savedKey = localStorage.getItem('arthAcadGroqApiKey');
-    if (savedKey) {
-        document.getElementById('groq_api_key').value = savedKey;
-        const apiKeyContainer = document.getElementById('api-key-container');
-        if (apiKeyContainer) {
-            apiKeyContainer.style.display = 'none';
-        }
-    }
-
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        // Hide previous errors & show loading
         errorAlert.classList.add('hidden');
         loading.classList.remove('hidden');
-
-        // Gather Data
-        const groqApiKey = document.getElementById('groq_api_key').value;
-        if (!groqApiKey) {
-            showError("Please enter your Groq API Key.");
-            loading.classList.add('hidden');
-            return;
-        }
-
-        // Save the valid key for future use
-        localStorage.setItem('arthAcadGroqApiKey', groqApiKey);
 
         const checkedTopics = Array.from(document.querySelectorAll('input[name="topics"]:checked')).map(cb => cb.value);
         if (checkedTopics.length === 0) {
@@ -41,7 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const payload = {
-            groq_api_key: groqApiKey,
             topics: checkedTopics,
             mcq_count: document.getElementById('mcq_count').value,
             fib_count: document.getElementById('fib_count').value,

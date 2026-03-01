@@ -1334,10 +1334,10 @@ def generate_route():
     }
     geo_count = int(data.get('geo_count', 0))
     topics = data.get('topics', ['General Mathematics'])
-    groq_api_key = data.get('groq_api_key', '')
+    groq_api_key = os.environ.get('GROQ_API_KEY', '')
 
     if not groq_api_key:
-        return jsonify({"error": "Please provide a valid Groq API Key."}), 400
+        return jsonify({"error": "Server API key not configured. Contact admin."}), 500
 
     request_id = str(uuid.uuid4())
     progress_store[request_id] = {"status": "Initializing...", "progress": 5}
