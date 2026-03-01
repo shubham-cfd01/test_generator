@@ -11,13 +11,16 @@
 </head>
 
 <body>
-    <header class="header">
+    <header class="header" style="display:flex;justify-content:space-between;align-items:center;padding:0 24px;">
         <div class="logo-container">
             <div class="logo">
                 <i class="fa-solid fa-graduation-cap"></i> Arth Academy
             </div>
             <div class="subtitle">AI RAG Test Generator</div>
         </div>
+        <a href="{{ url_for('logout') }}" style="color:var(--text-muted);text-decoration:none;font-size:14px;padding:8px 16px;border:1px solid var(--border);border-radius:8px;">
+            <i class="fa-solid fa-right-from-bracket"></i> Logout
+        </a>
     </header>
 
     <main class="container">

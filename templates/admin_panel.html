@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Arth Academy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .admin-container { max-width: 800px; margin: 30px auto; padding: 0 20px; }
+        .admin-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 24px;
+        }
+        .admin-header h2 { color: var(--primary); font-size: 24px; }
+        .admin-header a {
+            color: var(--text-muted); text-decoration: none; font-size: 14px;
+            padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px;
+        }
+        .admin-header a:hover { background: #f1f5f9; }
+        .add-form {
+            background: white; border-radius: 12px; padding: 24px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 24px;
+            display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+        }
+        .add-form .field { flex: 1; min-width: 180px; }
+        .add-form label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+        .add-form input {
+            width: 100%; padding: 10px 14px; border: 2px solid var(--border);
+            border-radius: 8px; font-size: 14px; font-family: 'Outfit', sans-serif;
+        }
+        .add-form input:focus { border-color: var(--primary); outline: none; }
+        .add-form button {
+            padding: 10px 24px; background: var(--primary); color: white;
+            border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+            cursor: pointer; font-family: 'Outfit', sans-serif; white-space: nowrap;
+        }
+        .add-form button:hover { background: var(--primary-dark); }
+        .users-table {
+            background: white; border-radius: 12px; overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        .users-table table { width: 100%; border-collapse: collapse; }
+        .users-table th {
+            background: var(--primary); color: white; padding: 14px 16px;
+            text-align: left; font-size: 13px; font-weight: 600;
+        }
+        .users-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+        .users-table tr:last-child td { border-bottom: none; }
+        .badge-active {
+            background: #DCFCE7; color: #16A34A; padding: 4px 10px;
+            border-radius: 20px; font-size: 12px; font-weight: 600;
+        }
+        .badge-inactive {
+            background: #FEE2E2; color: #DC2626; padding: 4px 10px;
+            border-radius: 20px; font-size: 12px; font-weight: 600;
+        }
+        .action-btn {
+            padding: 6px 12px; border: none; border-radius: 6px;
+            font-size: 12px; font-weight: 600; cursor: pointer;
+            text-decoration: none; display: inline-block; margin: 2px;
+            font-family: 'Outfit', sans-serif;
+        }
+        .btn-danger { background: #FEE2E2; color: #DC2626; }
+        .btn-danger:hover { background: #FECACA; }
+        .btn-success { background: #DCFCE7; color: #16A34A; }
+        .btn-success:hover { background: #BBF7D0; }
+        .btn-delete { background: #f1f5f9; color: #64748b; }
+        .btn-delete:hover { background: #e2e8f0; }
+        .empty-state { text-align: center; padding: 40px; color: var(--text-muted); }
+        @media (max-width: 600px) {
+            .add-form { flex-direction: column; }
+            .users-table { overflow-x: auto; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <div class="logo"><i class="fa-solid fa-graduation-cap"></i> Arth Academy</div>
+            <div class="subtitle">Admin Panel</div>
+        </div>
+    </header>
+
+    <div class="admin-container">
+        <div class="admin-header">
+            <h2><i class="fa-solid fa-users-gear"></i> Manage Users</h2>
+            <a href="{{ url_for('admin_logout') }}"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+        </div>
+
+        <form class="add-form" method="POST" action="{{ url_for('admin_add_user') }}">
+            <div class="field">
+                <label>Email or Phone</label>
+                <input type="text" name="contact" placeholder="user@email.com or 9876543210" required>
+            </div>
+            <div class="field">
+                <label>Name (optional)</label>
+                <input type="text" name="name" placeholder="Student / Teacher name">
+            </div>
+            <button type="submit"><i class="fa-solid fa-user-plus"></i> Add User</button>
+        </form>
+
+        <div class="users-table">
+            {% if users %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Contact</th>
+                        <th>Name</th>
+                        <th>Added On</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ user['contact'] }}</td>
+                        <td>{{ user['name'] or '—' }}</td>
+                        <td>{{ user['added_on'][:10] if user['added_on'] else '—' }}</td>
+                        <td>
+                            {% if user['is_active'] %}
+                            <span class="badge-active">Active</span>
+                            {% else %}
+                            <span class="badge-inactive">Blocked</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user['is_active'] %}
+                            <a href="{{ url_for('admin_remove_user', user_id=user['id']) }}" class="action-btn btn-danger">Block</a>
+                            {% else %}
+                            <a href="{{ url_for('admin_activate_user', user_id=user['id']) }}" class="action-btn btn-success">Activate</a>
+                            {% endif %}
+                            <a href="{{ url_for('admin_delete_user', user_id=user['id']) }}" class="action-btn btn-delete" onclick="return confirm('Permanently delete this user?')">Delete</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <i class="fa-solid fa-user-slash" style="font-size:32px;margin-bottom:12px;"></i>
+                <p>No users added yet. Add an email or phone above to grant access.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

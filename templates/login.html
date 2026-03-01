@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Arth Academy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .login-container {
+            display: flex; justify-content: center; align-items: center;
+            min-height: 80vh; padding: 20px;
+        }
+        .login-card {
+            background: white; border-radius: 16px; padding: 48px 40px;
+            box-shadow: 0 4px 24px rgba(79,70,229,0.10); max-width: 420px; width: 100%;
+            text-align: center;
+        }
+        .login-card .logo { font-size: 28px; font-weight: 700; color: var(--primary); margin-bottom: 8px; }
+        .login-card .subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 32px; }
+        .login-card input[type="text"] {
+            width: 100%; padding: 14px 16px; border: 2px solid var(--border);
+            border-radius: 10px; font-size: 15px; font-family: 'Outfit', sans-serif;
+            outline: none; transition: border 0.2s;
+        }
+        .login-card input[type="text"]:focus { border-color: var(--primary); }
+        .login-card button {
+            width: 100%; padding: 14px; margin-top: 16px; background: var(--primary);
+            color: white; border: none; border-radius: 10px; font-size: 16px;
+            font-weight: 600; cursor: pointer; font-family: 'Outfit', sans-serif;
+            transition: background 0.2s;
+        }
+        .login-card button:hover { background: var(--primary-dark); }
+        .error-msg {
+            background: #FEF2F2; color: #DC2626; padding: 12px; border-radius: 8px;
+            margin-bottom: 16px; font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <div class="logo"><i class="fa-solid fa-graduation-cap"></i> Arth Academy</div>
+            <div class="subtitle">AI RAG Test Generator</div>
+        </div>
+    </header>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="logo"><i class="fa-solid fa-lock"></i></div>
+            <p class="subtitle">Enter your registered email or phone number to access the test generator.</p>
+            {% if error %}
+            <div class="error-msg">{{ error }}</div>
+            {% endif %}
+            <form method="POST">
+                <input type="text" name="contact" placeholder="Email or Phone Number" required autofocus>
+                <button type="submit"><i class="fa-solid fa-right-to-bracket"></i> Access App</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

@@ -5,7 +5,10 @@ import io as io_module
 import math
 import random
 import re as _re
-from flask import Flask, render_template, request, send_file, jsonify, Response
+import sqlite3
+import hashlib
+import functools
+from flask import Flask, render_template, request, send_file, jsonify, Response, redirect, url_for, session
 from groq import Groq
 from io import BytesIO
 import threading
@@ -20,12 +23,70 @@ matplotlib.use('Agg')  # non-interactive backend
 import matplotlib.pyplot as plt
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'arth-academy-secret-key-change-in-prod')
+
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'arth@admin2026')
+DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'users.db')
 
 # ─────────────────────────────────────────────────────────
 # Global memory store for progress tracking
 # ─────────────────────────────────────────────────────────
 progress_store = {}
 result_store = {}
+
+
+# ─────────────────────────────────────────────────────────
+# USER ACCESS DATABASE
+# ─────────────────────────────────────────────────────────
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute('''CREATE TABLE IF NOT EXISTS allowed_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contact TEXT UNIQUE NOT NULL,
+        name TEXT DEFAULT '',
+        added_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_active INTEGER DEFAULT 1
+    )''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def is_user_allowed(contact):
+    contact = contact.strip().lower()
+    conn = get_db()
+    user = conn.execute(
+        'SELECT * FROM allowed_users WHERE LOWER(contact) = ? AND is_active = 1',
+        (contact,)
+    ).fetchone()
+    conn.close()
+    return user is not None
+
+
+def login_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('user_logged_in'):
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('is_admin'):
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated
 
 # ─────────────────────────────────────────────────────────
 # CONSTANTS
@@ -1274,7 +1335,106 @@ def create_branded_pdf(questions, topic, branding_opts=None):
 # ─────────────────────────────────────────────────────────
 @app.route('/')
 def home():
+    if not session.get('user_logged_in'):
+        return redirect(url_for('login_page'))
     return render_template('index.html')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login_page():
+    if request.method == 'POST':
+        contact = request.form.get('contact', '').strip()
+        if not contact:
+            return render_template('login.html', error='Please enter your email or phone number.')
+        if is_user_allowed(contact):
+            session['user_logged_in'] = True
+            session['user_contact'] = contact
+            return redirect(url_for('home'))
+        else:
+            return render_template('login.html', error='Access denied. Your email/phone is not authorized. Contact admin.')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login_page'))
+
+
+@app.route('/admin', methods=['GET', 'POST'])
+def admin_login():
+    if session.get('is_admin'):
+        return redirect(url_for('admin_panel'))
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        if password == ADMIN_PASSWORD:
+            session['is_admin'] = True
+            return redirect(url_for('admin_panel'))
+        return render_template('admin_login.html', error='Wrong password.')
+    return render_template('admin_login.html')
+
+
+@app.route('/admin/panel')
+@admin_required
+def admin_panel():
+    conn = get_db()
+    users = conn.execute('SELECT * FROM allowed_users ORDER BY added_on DESC').fetchall()
+    conn.close()
+    return render_template('admin_panel.html', users=users)
+
+
+@app.route('/admin/add', methods=['POST'])
+@admin_required
+def admin_add_user():
+    contact = request.form.get('contact', '').strip().lower()
+    name = request.form.get('name', '').strip()
+    if not contact:
+        return redirect(url_for('admin_panel'))
+    conn = get_db()
+    try:
+        conn.execute('INSERT INTO allowed_users (contact, name) VALUES (?, ?)', (contact, name))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.execute('UPDATE allowed_users SET is_active = 1, name = ? WHERE LOWER(contact) = ?', (name, contact))
+        conn.commit()
+    conn.close()
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin/remove/<int:user_id>')
+@admin_required
+def admin_remove_user(user_id):
+    conn = get_db()
+    conn.execute('UPDATE allowed_users SET is_active = 0 WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin/activate/<int:user_id>')
+@admin_required
+def admin_activate_user(user_id):
+    conn = get_db()
+    conn.execute('UPDATE allowed_users SET is_active = 1 WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin/delete/<int:user_id>')
+@admin_required
+def admin_delete_user(user_id):
+    conn = get_db()
+    conn.execute('DELETE FROM allowed_users WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('admin_login'))
 
 
 @app.route('/progress/<request_id>')
@@ -1310,6 +1470,7 @@ def background_generation_task(request_id, counts, topics, difficulty, groq_api_
 
 
 @app.route('/generate', methods=['POST'])
+@login_required
 def generate_route():
     data = request.json
     counts = {
@@ -1353,6 +1514,7 @@ def generate_route():
 
 
 @app.route('/download/<request_id>')
+@login_required
 def download(request_id):
     if request_id not in result_store:
         return "PDF not found or expired.", 404
