@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arth Academy RAG Test Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <div class="logo">
+                <i class="fa-solid fa-graduation-cap"></i> Arth Academy
+            </div>
+            <div class="subtitle">AI RAG Test Generator</div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="card">
+            <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Generate Custom Test Paper</h2>
+            <p class="description">Select your parameters below to instantly generate a PDF test paper based on the
+                Class 8 Mathematics syllabus using Retrieval-Augmented Generation.</p>
+
+            <form id="generator-form">
+                <div class="form-group" id="api-key-container">
+                    <label for="groq_api_key"><i class="fa-solid fa-key"></i> Groq API Key</label>
+                    <input type="password" id="groq_api_key" placeholder="Get your free key at console.groq.com"
+                        required>
+                    <small>Free key from <a href="https://console.groq.com" target="_blank">console.groq.com</a> — the
+                        key is never stored.</small>
+                </div>
+
+                <div class="form-section">
+                    <h3>1. Select Topics</h3>
+                    <div class="checkbox-grid">
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Rational Numbers"
+                                checked> <span class="custom-checkbox"></span> Rational Numbers</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Linear Equations in One Variable"> <span class="custom-checkbox"></span> Linear
+                            Equations</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Understanding Quadrilaterals"> <span class="custom-checkbox"></span>
+                            Understanding Quadrilaterals</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Data Handling"> <span
+                                class="custom-checkbox"></span> Data Handling</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Squares and Square Roots"> <span class="custom-checkbox"></span> Squares and
+                            Square Roots</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Algebraic Expressions and Identities"> <span class="custom-checkbox"></span>
+                            Algebraic Expressions</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Mensuration"> <span
+                                class="custom-checkbox"></span> Mensuration</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Exponents and Powers">
+                            <span class="custom-checkbox"></span> Exponents &amp; Powers</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Comparing Quantities">
+                            <span class="custom-checkbox"></span> Comparing Quantities</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Cube and Cube Roots">
+                            <span class="custom-checkbox"></span> Cube &amp; Cube Roots</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Direct and Inverse Proportions"> <span class="custom-checkbox"></span> Direct
+                            &amp; Inverse Proportions</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Factorisation"> <span
+                                class="custom-checkbox"></span> Factorisation</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Introduction to Graphs"> <span class="custom-checkbox"></span> Introduction to
+                            Graphs</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Playing with Numbers">
+                            <span class="custom-checkbox"></span> Playing with Numbers</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Visualising Solid Shapes"> <span class="custom-checkbox"></span> Visualising
+                            Solid Shapes</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Probability"> <span
+                                class="custom-checkbox"></span> Probability</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Pie Charts & Bar Graphs"> <span class="custom-checkbox"></span> Pie Charts &amp;
+                            Bar Graphs</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics"
+                                value="Simple & Compound Interest"> <span class="custom-checkbox"></span> Compound
+                            Interest</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Sets & Venn Diagrams">
+                            <span class="custom-checkbox"></span> Sets (ICSE)</label>
+                        <label class="checkbox-label"><input type="checkbox" name="topics" value="Coordinate Geometry">
+                            <span class="custom-checkbox"></span> Coordinate Geometry</label>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>2. Choose Question Quantities</h3>
+                    <div class="form-grid counts-grid">
+                        <div class="form-group">
+                            <label for="mcq_count">Multiple Choice (MCQ)</label>
+                            <input type="number" id="mcq_count" min="0" max="25" value="5" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="fib_count">Fill in the Blanks</label>
+                            <input type="number" id="fib_count" min="0" max="25" value="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="desc_count">Descriptive Questions</label>
+                            <input type="number" id="desc_count" min="0" max="25" value="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="geo_count"><i class="fa-solid fa-shapes" style="color:#5c3bef"></i> Diagram /
+                                Geometry</label>
+                            <input type="number" id="geo_count" min="0" max="10" value="0" required>
+                            <small style="color:#64748b">Auto-draws triangles, circles, etc.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>3. Optional Customization</h3>
+                    <div class="form-grid counts-grid">
+                        <div class="form-group">
+                            <label for="student_name">Student Name</label>
+                            <input type="text" id="student_name" placeholder="Leave blank for line">
+                        </div>
+                        <div class="form-group">
+                            <label for="class_sec">Class / Section</label>
+                            <input type="text" id="class_sec" placeholder="Leave blank for line">
+                        </div>
+                        <div class="form-group">
+                            <label for="roll_no">Roll No.</label>
+                            <input type="text" id="roll_no" placeholder="Leave blank for line">
+                        </div>
+                        <div class="form-group">
+                            <label for="test_date">Date</label>
+                            <input type="text" id="test_date" placeholder="Leave blank for line">
+                        </div>
+                        <div class="form-group">
+                            <label for="test_time">Time (Mins)</label>
+                            <input type="text" id="test_time" placeholder="Leave blank for line">
+                        </div>
+                        <div class="form-group">
+                            <label for="max_marks">Max Marks</label>
+                            <input type="text" id="max_marks" placeholder="Leave blank for line">
+                        </div>
+                        <div class="form-group">
+                            <label for="phone_no">Footer Phone No.</label>
+                            <input type="text" id="phone_no" value="7987990184">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label for="email_id">Footer Email</label>
+                            <input type="text" id="email_id" value="arthacad@gmail.com">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>4. Select Difficulty Levels (%)</h3>
+                    <div class="form-grid counts-grid">
+                        <div class="form-group">
+                            <label for="easy_pct">Easy (%)</label>
+                            <input type="number" id="easy_pct" min="0" max="100" value="40" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="medium_pct">Medium (%)</label>
+                            <input type="number" id="medium_pct" min="0" max="100" value="40" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="tough_pct">Tough (%)</label>
+                            <input type="number" id="tough_pct" min="0" max="100" value="20" required>
+                        </div>
+                    </div>
+                    <small style="color: #64748b; display: block; margin-top: 5px;">Total should preferably be
+                        100%.</small>
+                </div>
+
+                <button type="submit" id="generate-btn" class="btn btn-primary btn-block">
+                    <i class="fa-solid fa-file-pdf"></i> Generate PDF Test
+                </button>
+            </form>
+
+            <div id="loading" class="loading-overlay hidden">
+                <div class="progress-box">
+                    <p id="progress-text">Initializing AI Engine...</p>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="error-message" class="error-alert hidden"></div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+
+</html>

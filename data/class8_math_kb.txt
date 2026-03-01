@@ -1,0 +1,58 @@
+Class 8 Mathematics Syllabus & Concepts Reference
+
+Chapter 1: Rational Numbers
+- A rational number is any number that can be expressed as p/q, where p and q are integers and q is not equal to 0. 
+- Properties: closure, commutativity, associativity, and distributivity of rational numbers.
+- Examples: 1/2, -3/4, 0, 5.
+
+Chapter 2: Linear Equations in One Variable
+- An equation is a statement of equality of two algebraic expressions involving one or more variables.
+- Linear equation has the highest power of the variable as 1. Example: 2x - 3 = 7.
+- Solving equations involves performing the same mathematical operations on both sides of the equation.
+
+Chapter 3: Understanding Quadrilaterals
+- Polygon: A simple closed curve made up of only line segments.
+- Sum of interior angles of a polygon with n sides is (n-2) * 180 degrees.
+- Types of Quadrilaterals: Trapezium, Kite, Parallelogram, Rhombus, Rectangle, Square.
+- Parallelogram: opposite sides are parallel and equal, opposite angles are equal, diagonals bisect each other.
+
+Chapter 4: Data Handling
+- Raw data can be graphically represented using Pictographs, Bar Graphs, Double Bar Graphs, and Pie Charts (Circle Graphs).
+- Probability: The chance of an event happening. P(E) = Number of favourable outcomes / Total number of outcomes.
+
+Chapter 5: Squares and Square Roots
+- Square of a number is the number multiplied by itself (x^2).
+- Properties: Squares of even numbers are even, squares of odd numbers are odd.
+- Square Root is the inverse operation of squaring. The symbol is √.
+
+Chapter 6: Cubes and Cube Roots
+- Cube of a number is the number multiplied by itself three times (x^3).
+- Cube root is the inverse operation.
+
+Chapter 7: Comparing Quantities
+- Ratios and Percentages: Used to compare quantities.
+- Profit and Loss: Profit = SP - CP, Loss = CP - SP.
+- Simple Interest (SI) = (P * R * T) / 100
+- Compound Interest (CI) = A - P, where A = P(1 + R/100)^n
+
+Chapter 8: Algebraic Expressions and Identities
+- Expressions are formed from variables and constants. Examples: 2x + 3.
+- Standard Identities:
+  1. (a + b)^2 = a^2 + 2ab + b^2
+  2. (a - b)^2 = a^2 - 2ab + b^2
+  3. (a + b)(a - b) = a^2 - b^2
+
+Chapter 9: Mensuration
+- Area of Trapezium = 1/2 * (sum of parallel sides) * height
+- Area of general quadrilateral = 1/2 * diagonal * (sum of perpendiculars dropped on it)
+- Surface area of a cuboid = 2(lb + bh + hl)
+- Volume of cuboid = l * b * h
+- Volume of cylinder = π * r^2 * h
+
+Chapter 10: Exponents and Powers
+- Laws of exponents: a^m * a^n = a^(m+n); a^m / a^n = a^(m-n); (a^m)^n = a^(mn); a^0 = 1.
+- Numbers in standard form (scientific notation).
+
+Chapter 11: Direct and Inverse Proportions
+- Direct proportion: If x increases, y increases in such a way that x/y remains constant.
+- Inverse proportion: If x increases, y decreases such that x*y remains constant.

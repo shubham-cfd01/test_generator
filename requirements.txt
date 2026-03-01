@@ -1,0 +1,6 @@
+flask
+gunicorn
+groq
+reportlab
+matplotlib
+numpy
