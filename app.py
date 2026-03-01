@@ -27,7 +27,16 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'arth-academy-secret-key-change-in-prod')
 
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'arth@admin2026')
-DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'users.db')
+# Use persistent path on Railway (set DATABASE_PATH=/data/users.db and add Volume at /data)
+# Otherwise use local data/ for development - data is lost on redeploy without a volume
+_vol = os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', '')
+_db_env = os.environ.get('DATABASE_PATH', '')
+if _db_env:
+    DB_PATH = _db_env
+elif _vol:
+    DB_PATH = os.path.join(_vol, 'users.db')
+else:
+    DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'users.db')
 
 # ─────────────────────────────────────────────────────────
 # Global memory store for progress tracking
