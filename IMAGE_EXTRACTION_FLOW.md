@@ -20,27 +20,24 @@
 }
 ```
 
+## Upload Format: ZIP with Excel + Images
+
+```
+test.zip
+├── questions.xlsx      # Excel with id, type, question, options, answer, diagram, ...
+└── diagram/            # (or images/) – folder for diagram images
+    └── circuit.png     # referenced by diagram column
+```
+
+- **Excel** – Required columns: id, type, question, options, answer. Optional: subject, chapter, difficulty, marks, **diagram**
+- **Diagram column** – Filename only (e.g. `circuit.png` or `circuit`). File must exist in `diagram/` or `images/` inside the ZIP.
+
 ## Image Extraction Flow
 
-### Excel (.xlsx)
-
-1. **ZIP parse** – Open xlsx as ZIP, read `xl/media/*` and `xl/drawings/*`
-2. **Relationships** – Map rId → media path from `xl/drawings/_rels/*.rels`
-3. **Row mapping** – From drawing XML anchors, map image → Excel row (0-based)
-4. **Question match** – For each question row, try Excel rows: `i+2, i+1, i+3, i, i+4, i+5` (header = row 1)
-5. **Orphans** – If no images matched by row, assign unmatched images to first N questions
-
-## Word (.docx)
-
-1. **ZIP parse** – Open docx as ZIP, read `word/media/*` and `word/_rels/document.xml.rels`
-2. **Relationships** – Map rId → media path for image types
-3. **Block order** – Walk body: paragraphs (p) and table cells (tbl→tr→tc→p) in document order
-4. **Block index** – Each paragraph = one block; same order as python-docx iterator
-5. **Question match** – Images in block N belong to the current question at that point
-6. **Orphans** – If no block-level images found, collect all images and assign to first N questions
+1. **ZIP parse** – Open upload ZIP, find `.xlsx` and read `diagram/` or `images/` folder
+2. **Diagram lookup** – For each row, diagram column value (e.g. `circuit.png`) → lookup in diagram folder
+3. **Question match** – Image bytes stored per question id; served at `/series/image/{test_id}/{q_id}`
 
 ## Image Serving
 
-- **EMF/WMF** – Convert to PNG via ImageMagick (aptPkgs)
-- **PNG/JPEG/GIF** – Serve as-is
-- **Fallback** – Placeholder if conversion fails
+- **PNG/JPEG/GIF** – Serve as-is from diagram folder

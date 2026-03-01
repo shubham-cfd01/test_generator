@@ -1506,8 +1506,70 @@ def _parse_diagram_string(raw):
     return geo
 
 
+def parse_questions_from_zip(zip_stream):
+    """Parse ZIP containing Excel + diagram folder. Diagram column = filename e.g. circuit.png."""
+    from zipfile import ZipFile
+    zf = ZipFile(zip_stream)
+    xlsx_path = None
+    diagram_files = {}
+    for n in zf.namelist():
+        if n.lower().endswith('.xlsx') and not n.startswith('__'):
+            xlsx_path = n
+        if ('diagram/' in n or 'images/' in n) and n.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')):
+            data = zf.read(n)
+            if data:
+                base = os.path.basename(n)
+                diagram_files[base] = data
+                diagram_files[base.lower()] = data
+                diagram_files[base.rsplit('.', 1)[0]] = data
+                diagram_files[base.rsplit('.', 1)[0].lower()] = data
+    if not xlsx_path:
+        zf.close()
+        raise ValueError("ZIP must contain an .xlsx file")
+    excel_bytes = zf.read(xlsx_path)
+    zf.close()
+    df = pd.read_excel(BytesIO(excel_bytes))
+    df.columns = [c.strip().lower() for c in df.columns]
+    df = df.fillna('')
+    questions = []
+    images_store = {}
+    for i, row in df.iterrows():
+        q_id = int(row.get('id', i + 1))
+        q_type = str(row.get('type', 'mcq')).strip().lower()
+        opts = str(row.get('options', ''))
+        opts_list = [o.strip() for o in opts.split('|')] if opts else []
+        diagram_val = str(row.get('diagram', '')).strip()
+        img_data = None
+        if diagram_val:
+            for key in [diagram_val, diagram_val.lower(), diagram_val + '.png', diagram_val.rsplit('.', 1)[0] if '.' in diagram_val else diagram_val]:
+                if key in diagram_files:
+                    img_data = diagram_files[key]
+                    break
+        q = {
+            'id': q_id,
+            'subject': str(row.get('subject', '')).strip(),
+            'chapter': str(row.get('chapter', '')).strip(),
+            'type': q_type,
+            'question': str(row.get('question', '')),
+            'answer': str(row.get('answer', '')),
+            'options': opts_list,
+            'difficulty': str(row.get('difficulty', '')).strip(),
+            'marks': row.get('marks', 0),
+            'has_image': bool(img_data),
+            'image_count': 1 if img_data else 0,
+        }
+        try:
+            q['marks'] = int(q['marks']) if q['marks'] else 0
+        except (ValueError, TypeError):
+            q['marks'] = 0
+        if img_data:
+            images_store[q_id] = [img_data]
+        questions.append(q)
+    return questions, images_store
+
+
 def parse_questions_from_excel(file_stream):
-    """Parse questions and extract embedded images from an Excel file."""
+    """Parse questions from Excel (embedded/pasted images or standalone xlsx)."""
     import openpyxl
     from zipfile import ZipFile
     from xml.etree import ElementTree as ET
