@@ -1373,21 +1373,111 @@ def generator_home():
 
 
 # ─── TEST SERIES ROUTES ─────────────────────────────────
-def load_questions_from_excel():
-    try:
-        xl_path = os.path.join(os.path.dirname(__file__), 'data', 'questions.xlsx')
-        df = pd.read_excel(xl_path)
-        df = df.fillna('')
-        questions_list = df.to_dict('records')
-        for q in questions_list:
-            if q['type'] == 'mcq' and q['options']:
-                q['options'] = [opt.strip() for opt in str(q['options']).split('|')]
-            else:
-                q['options'] = []
-        return questions_list
-    except Exception as e:
-        print(f"Error loading Excel file: {e}")
-        return []
+# In-memory store for uploaded test sessions
+test_sessions = {}
+
+
+def parse_questions_from_excel(file_stream):
+    df = pd.read_excel(file_stream)
+    df.columns = [c.strip().lower() for c in df.columns]
+    df = df.fillna('')
+    questions = []
+    for i, row in df.iterrows():
+        q = {
+            'id': int(row.get('id', i + 1)),
+            'type': str(row.get('type', 'mcq')).strip().lower(),
+            'question': str(row.get('question', '')),
+            'answer': str(row.get('answer', '')),
+            'options': []
+        }
+        opts = str(row.get('options', ''))
+        if q['type'] == 'mcq' and opts:
+            q['options'] = [o.strip() for o in opts.split('|')]
+        questions.append(q)
+    return questions
+
+
+def parse_questions_from_docx(file_stream):
+    from docx import Document
+    doc = Document(file_stream)
+    questions = []
+    q_id = 0
+    current_q = None
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        style_name = (para.style.name or '').lower()
+
+        if text.lower().startswith('q') and ('.' in text[:5] or ')' in text[:5]):
+            if current_q:
+                questions.append(current_q)
+            q_id += 1
+            q_text = _re.sub(r'^[Qq]\d+[\.\)]\s*', '', text).strip()
+            current_q = {'id': q_id, 'type': 'fill_in_the_blanks', 'question': q_text, 'options': [], 'answer': ''}
+
+        elif text.lower().startswith('answer:') or text.lower().startswith('ans:'):
+            if current_q:
+                ans = _re.sub(r'^(?:answer|ans)\s*:\s*', '', text, flags=_re.IGNORECASE).strip()
+                current_q['answer'] = ans
+
+        elif text.lower().startswith(('a)', 'b)', 'c)', 'd)', 'a.', 'b.', 'c.', 'd.')):
+            if current_q:
+                current_q['type'] = 'mcq'
+                opt_text = _re.sub(r'^[a-dA-D][\.\)]\s*', '', text).strip()
+                current_q['options'].append(opt_text)
+
+        elif current_q and not current_q['question']:
+            current_q['question'] = text
+
+    if current_q:
+        questions.append(current_q)
+    return questions
+
+
+def generate_sample_excel():
+    data = [
+        {"id": 1, "type": "mcq", "question": "Which of the following is a rational number?", "options": "√2|π|0|√3", "answer": "0"},
+        {"id": 2, "type": "mcq", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225"},
+        {"id": 3, "type": "mcq", "question": "If 3x + 5 = 20, what is the value of x?", "options": "3|5|15|4", "answer": "5"},
+        {"id": 4, "type": "fill_in_the_blanks", "question": "The cube root of 512 is ____.", "options": "", "answer": "8"},
+        {"id": 5, "type": "fill_in_the_blanks", "question": "The reciprocal of -3/4 is ____.", "options": "", "answer": "-4/3"},
+    ]
+    df = pd.DataFrame(data)
+    buf = BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+    return buf
+
+
+def generate_sample_docx():
+    from docx import Document
+    doc = Document()
+    doc.add_heading('Sample Test Questions', level=1)
+    doc.add_paragraph('Format: Start each question with Q1. Q2. etc.\n'
+                      'Add options as A) B) C) D) on separate lines.\n'
+                      'Write Answer: on a separate line.\n')
+    doc.add_paragraph('Q1. Which of the following is a rational number?')
+    doc.add_paragraph('A) √2')
+    doc.add_paragraph('B) π')
+    doc.add_paragraph('C) 0')
+    doc.add_paragraph('D) √3')
+    doc.add_paragraph('Answer: 0')
+    doc.add_paragraph('')
+    doc.add_paragraph('Q2. What is the square of 15?')
+    doc.add_paragraph('A) 225')
+    doc.add_paragraph('B) 255')
+    doc.add_paragraph('C) 125')
+    doc.add_paragraph('D) 325')
+    doc.add_paragraph('Answer: 225')
+    doc.add_paragraph('')
+    doc.add_paragraph('Q3. The cube root of 512 is ____.')
+    doc.add_paragraph('Answer: 8')
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
 
 
 @app.route('/series')
@@ -1395,15 +1485,76 @@ def load_questions_from_excel():
 def series_home():
     if not user_has_product('series'):
         return render_template('no_access.html', product='Test Series'), 403
-    questions_data = load_questions_from_excel()
-    return render_template('series/index.html', questions=questions_data)
+    return render_template('series/setup.html')
 
 
-@app.route('/series/submit', methods=['POST'])
+@app.route('/series/sample/excel')
 @login_required
-def series_submit():
+def series_sample_excel():
+    buf = generate_sample_excel()
+    return send_file(buf, as_attachment=True, download_name='sample_questions.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/series/sample/word')
+@login_required
+def series_sample_word():
+    buf = generate_sample_docx()
+    return send_file(buf, as_attachment=True, download_name='sample_questions.docx', mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+@app.route('/series/start', methods=['POST'])
+@login_required
+def series_start():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    file = request.files['file']
+    filename = file.filename.lower()
+    timer_mins = int(request.form.get('timer', 10))
+    total_marks = int(request.form.get('marks', 0))
+
     try:
-        questions_data = load_questions_from_excel()
+        if filename.endswith('.xlsx') or filename.endswith('.xls'):
+            questions = parse_questions_from_excel(file)
+        elif filename.endswith('.docx'):
+            questions = parse_questions_from_docx(file)
+        else:
+            return jsonify({"error": "Unsupported file format. Upload .xlsx or .docx"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse file: {str(e)}"}), 400
+
+    if not questions:
+        return jsonify({"error": "No questions found in the file. Check the format."}), 400
+
+    test_id = str(uuid.uuid4())
+    test_sessions[test_id] = {
+        'questions': questions,
+        'timer': timer_mins,
+        'marks': total_marks,
+    }
+    return jsonify({"test_id": test_id})
+
+
+@app.route('/series/test/<test_id>')
+@login_required
+def series_test(test_id):
+    ts = test_sessions.get(test_id)
+    if not ts:
+        return "Test not found or expired.", 404
+    return render_template('series/index.html',
+                           questions=ts['questions'],
+                           timer=ts['timer'],
+                           marks=ts['marks'],
+                           test_id=test_id)
+
+
+@app.route('/series/submit/<test_id>', methods=['POST'])
+@login_required
+def series_submit(test_id):
+    ts = test_sessions.get(test_id)
+    if not ts:
+        return jsonify({"error": "Test session expired."}), 404
+    try:
+        questions_data = ts['questions']
         user_answers = request.get_json()
         score = 0
         total_questions = len(questions_data)
@@ -1421,29 +1572,41 @@ def series_submit():
                 "correct_answer": q['answer'],
                 "user_answer": user_answers.get(q_id, "")
             })
+        marks_per_q = ts['marks'] / total_questions if ts['marks'] and total_questions else 0
+        total_scored = round(score * marks_per_q, 1) if ts['marks'] else score
         return jsonify({
             "score": score,
             "total": total_questions,
             "percentage": round((score / total_questions) * 100, 2) if total_questions else 0,
-            "results": results
+            "results": results,
+            "marks_scored": total_scored,
+            "marks_total": ts['marks']
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 
-@app.route('/series/download_test')
+@app.route('/series/download_test/<test_id>')
 @login_required
-def series_download():
-    questions_data = load_questions_from_excel()
+def series_download(test_id):
+    ts = test_sessions.get(test_id)
+    if not ts:
+        return "Test not found.", 404
+    questions_data = ts['questions']
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
     p.setFont("Helvetica-Bold", 18)
-    p.drawString(200, height - 50, "Arth Academy - Class 8 Math Test")
+    p.drawString(200, height - 50, "Arth Academy - Math Test")
     p.setFont("Helvetica", 12)
     p.drawString(50, height - 80, "Name: ________________________")
-    p.drawString(400, height - 80, "Date: _____________")
-    y = height - 120
+    p.drawString(350, height - 80, "Date: _____________")
+    if ts['marks']:
+        p.drawString(50, height - 100, f"Total Marks: {ts['marks']}")
+        p.drawString(350, height - 100, f"Time: {ts['timer']} minutes")
+        y = height - 130
+    else:
+        y = height - 110
     for i, q in enumerate(questions_data, 1):
         if y < 100:
             p.showPage()
@@ -1453,11 +1616,10 @@ def series_download():
         y -= 25
         p.setFont("Helvetica", 12)
         if q['type'] == 'mcq':
-            options = q['options']
             labels = ["A)", "B)", "C)", "D)"]
             opt_x = 70
-            for j in range(min(len(options), 4)):
-                p.drawString(opt_x, y, f"{labels[j]} {options[j]}")
+            for j in range(min(len(q['options']), 4)):
+                p.drawString(opt_x, y, f"{labels[j]} {q['options'][j]}")
                 opt_x += 120
             y -= 30
         else:
@@ -1465,7 +1627,7 @@ def series_download():
     p.showPage()
     p.save()
     buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name='Arth_Academy_Math_Test.pdf', mimetype='application/pdf')
+    return send_file(buffer, as_attachment=True, download_name='Arth_Academy_Test.pdf', mimetype='application/pdf')
 
 
 @app.route('/login', methods=['GET', 'POST'])

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arth Academy - Class 8 Math Test</title>
+    <title>Arth Academy - Math Test</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/series.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -15,8 +15,11 @@
                 <i class="fa-solid fa-graduation-cap"></i> Arth Academy
             </div>
             <div style="display:flex;gap:10px;margin-left:auto;">
-                <a href="/series/download_test" class="btn btn-secondary" style="font-size:0.9rem;padding:0.5rem 1rem;">
+                <a href="/series/download_test/{{ test_id }}" class="btn btn-secondary" style="font-size:0.9rem;padding:0.5rem 1rem;">
                     <i class="fa-solid fa-file-pdf"></i> Download PDF
+                </a>
+                <a href="{{ url_for('series_home') }}" class="btn btn-secondary" style="font-size:0.9rem;padding:0.5rem 1rem;">
+                    <i class="fa-solid fa-arrow-left"></i> New Test
                 </a>
                 <a href="{{ url_for('dashboard') }}" class="btn btn-secondary" style="font-size:0.9rem;padding:0.5rem 1rem;">
                     <i class="fa-solid fa-house"></i> Dashboard
@@ -24,8 +27,11 @@
             </div>
         </div>
         <div class="test-info">
-            <h1>Class 8 Mathematics: Foundations</h1>
-            <div class="timer" id="timer"><i class="fa-regular fa-clock"></i> 10:00</div>
+            <h1>
+                Mathematics Test
+                {% if marks %}<span style="font-size:0.85rem;color:var(--text-muted);font-weight:400;margin-left:12px;">Total Marks: {{ marks }}</span>{% endif %}
+            </h1>
+            <div class="timer" id="timer"><i class="fa-regular fa-clock"></i> {{ '%02d' | format(timer) }}:00</div>
         </div>
     </header>
 
@@ -71,14 +77,20 @@
             <div class="score-display">
                 <span id="score-text">0</span> / <span id="total-text">0</span>
             </div>
+            <div id="marks-display" class="score-display" style="font-size:1.5rem;color:var(--text-muted);display:none;"></div>
             <div class="progress-container">
                 <div class="progress-bar" id="progress-bar"></div>
             </div>
             <p id="percentage-text" class="percentage-text">0%</p>
             <p id="message-text" class="message-text">Great job!</p>
-            <button class="btn btn-secondary" onclick="window.location.reload()">
-                <i class="fa-solid fa-rotate-right"></i> Try Again
-            </button>
+            <div style="display:flex;gap:12px;justify-content:center;">
+                <button class="btn btn-secondary" onclick="window.location.href='{{ url_for('series_home') }}'">
+                    <i class="fa-solid fa-rotate-right"></i> New Test
+                </button>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                    <i class="fa-solid fa-house"></i> Dashboard
+                </a>
+            </div>
         </div>
     </main>
 
@@ -86,6 +98,10 @@
         <p>&copy; 2026 Arth Academy. Excellence in Mathematics.</p>
     </footer>
 
+    <script>
+        const TEST_ID = "{{ test_id }}";
+        const TIMER_MINS = {{ timer }};
+    </script>
     <script src="{{ url_for('static', filename='js/series.js') }}"></script>
 </body>
 </html>

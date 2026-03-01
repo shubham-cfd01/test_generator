@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Series Setup - Arth Academy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root { --primary:#4F46E5; --primary-light:#6366F1; --primary-dark:#4338CA; --bg:#F8FAFC; --text:#0F172A; --muted:#64748B; --border:#E2E8F0; --success:#10B981; }
+        * { margin:0; padding:0; box-sizing:border-box; font-family:'Outfit',sans-serif; }
+        body { background:var(--bg); color:var(--text); min-height:100vh; }
+        .header {
+            background:white; box-shadow:0 1px 3px rgba(0,0,0,0.1); padding:16px 24px;
+            display:flex; justify-content:space-between; align-items:center;
+        }
+        .logo { font-size:24px; font-weight:700; color:var(--primary); display:flex; align-items:center; gap:8px; }
+        .nav-links { display:flex; gap:10px; }
+        .nav-links a {
+            color:var(--muted); text-decoration:none; font-size:14px;
+            padding:8px 16px; border:1px solid var(--border); border-radius:8px;
+        }
+        .nav-links a:hover { background:#f1f5f9; }
+
+        .container { max-width:700px; margin:40px auto; padding:0 20px; }
+        .card {
+            background:white; border-radius:20px; padding:40px;
+            box-shadow:0 4px 24px rgba(79,70,229,0.08);
+        }
+        .card h2 { font-size:24px; margin-bottom:8px; color:var(--primary); }
+        .card .desc { color:var(--muted); font-size:15px; margin-bottom:32px; line-height:1.6; }
+
+        .samples {
+            display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:32px;
+        }
+        .sample-btn {
+            display:flex; align-items:center; gap:10px; padding:14px 18px;
+            background:#F1F5F9; border:2px solid var(--border); border-radius:12px;
+            text-decoration:none; color:var(--text); font-weight:600; font-size:14px;
+            transition:all 0.2s;
+        }
+        .sample-btn:hover { border-color:var(--primary); background:#EEF2FF; }
+        .sample-btn i { font-size:20px; color:var(--primary); }
+        .sample-btn .sub { font-size:12px; color:var(--muted); font-weight:400; }
+
+        .upload-area {
+            border:2px dashed var(--border); border-radius:16px; padding:40px;
+            text-align:center; cursor:pointer; transition:all 0.2s; margin-bottom:24px;
+            position:relative;
+        }
+        .upload-area:hover, .upload-area.dragover { border-color:var(--primary); background:#EEF2FF; }
+        .upload-area i { font-size:40px; color:var(--primary); margin-bottom:12px; }
+        .upload-area p { color:var(--muted); font-size:14px; }
+        .upload-area .filename { color:var(--success); font-weight:600; font-size:15px; margin-top:8px; }
+        .upload-area input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+
+        .settings { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:28px; }
+        .field label { display:block; font-size:13px; font-weight:600; color:var(--muted); margin-bottom:6px; }
+        .field input, .field select {
+            width:100%; padding:12px 14px; border:2px solid var(--border); border-radius:10px;
+            font-size:15px; font-family:'Outfit',sans-serif; outline:none; transition:border 0.2s;
+        }
+        .field input:focus, .field select:focus { border-color:var(--primary); }
+
+        .start-btn {
+            width:100%; padding:16px; background:var(--primary); color:white; border:none;
+            border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;
+            font-family:'Outfit',sans-serif; transition:background 0.2s; display:flex;
+            align-items:center; justify-content:center; gap:8px;
+        }
+        .start-btn:hover { background:var(--primary-dark); }
+        .start-btn:disabled { background:#94A3B8; cursor:not-allowed; }
+
+        .error-msg {
+            background:#FEF2F2; color:#DC2626; padding:12px; border-radius:8px;
+            margin-bottom:16px; font-size:14px; display:none;
+        }
+
+        .format-guide {
+            background:#F8FAFC; border:1px solid var(--border); border-radius:12px;
+            padding:20px; margin-bottom:24px;
+        }
+        .format-guide h4 { font-size:14px; color:var(--primary); margin-bottom:10px; }
+        .format-guide table { width:100%; font-size:13px; border-collapse:collapse; }
+        .format-guide th { text-align:left; padding:6px 8px; background:#EEF2FF; color:var(--primary); border-radius:4px; }
+        .format-guide td { padding:6px 8px; color:var(--muted); border-bottom:1px solid var(--border); }
+        .format-guide code { background:#EEF2FF; padding:2px 6px; border-radius:4px; font-size:12px; }
+
+        @media (max-width:600px) { .samples, .settings { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo"><i class="fa-solid fa-graduation-cap"></i> Arth Academy</div>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard') }}"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="{{ url_for('logout') }}"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <h2><i class="fa-solid fa-clipboard-list"></i> Test Series Setup</h2>
+            <p class="desc">Upload your question file (Excel or Word), set time and marks, then start the test.</p>
+
+            <h4 style="font-size:14px;color:var(--muted);margin-bottom:12px;"><i class="fa-solid fa-download"></i> Download Sample Format</h4>
+            <div class="samples">
+                <a href="{{ url_for('series_sample_excel') }}" class="sample-btn">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <div>Sample Excel<br><span class="sub">.xlsx format</span></div>
+                </a>
+                <a href="{{ url_for('series_sample_word') }}" class="sample-btn">
+                    <i class="fa-solid fa-file-word"></i>
+                    <div>Sample Word<br><span class="sub">.docx format</span></div>
+                </a>
+            </div>
+
+            <div class="format-guide">
+                <h4><i class="fa-solid fa-circle-info"></i> File Format Guide</h4>
+                <p style="font-size:13px;color:var(--muted);margin-bottom:10px;"><strong>Excel (.xlsx)</strong> — Use these columns:</p>
+                <table>
+                    <tr><th>Column</th><th>Description</th><th>Example</th></tr>
+                    <tr><td>id</td><td>Question number</td><td>1</td></tr>
+                    <tr><td>type</td><td><code>mcq</code> or <code>fill_in_the_blanks</code></td><td>mcq</td></tr>
+                    <tr><td>question</td><td>Question text</td><td>What is 5+3?</td></tr>
+                    <tr><td>options</td><td>Pipe-separated (MCQ only)</td><td><code>6|7|8|9</code></td></tr>
+                    <tr><td>answer</td><td>Correct answer</td><td>8</td></tr>
+                </table>
+                <p style="font-size:13px;color:var(--muted);margin-top:12px;"><strong>Word (.docx)</strong> — Write questions as:</p>
+                <p style="font-size:12px;color:var(--muted);font-family:monospace;line-height:1.8;margin-top:4px;">
+                    Q1. Your question here?<br>
+                    A) Option 1 &nbsp; B) Option 2 &nbsp; C) Option 3 &nbsp; D) Option 4<br>
+                    Answer: Option 2
+                </p>
+            </div>
+
+            <div id="error-msg" class="error-msg"></div>
+
+            <div class="upload-area" id="upload-area">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+                <p>Drag & drop your file here, or click to browse</p>
+                <p style="font-size:12px;margin-top:4px;">Supports .xlsx and .docx</p>
+                <div class="filename" id="filename"></div>
+                <input type="file" id="file-input" accept=".xlsx,.xls,.docx">
+            </div>
+
+            <div class="settings">
+                <div class="field">
+                    <label><i class="fa-regular fa-clock"></i> Test Duration (minutes)</label>
+                    <input type="number" id="timer" value="10" min="1" max="180">
+                </div>
+                <div class="field">
+                    <label><i class="fa-solid fa-star"></i> Total Marks (0 = auto)</label>
+                    <input type="number" id="marks" value="0" min="0" max="500">
+                </div>
+            </div>
+
+            <button class="start-btn" id="start-btn" disabled onclick="startTest()">
+                <i class="fa-solid fa-play"></i> Start Test
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const uploadArea = document.getElementById('upload-area');
+        const filenameDiv = document.getElementById('filename');
+        const startBtn = document.getElementById('start-btn');
+        const errorMsg = document.getElementById('error-msg');
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                filenameDiv.textContent = fileInput.files[0].name;
+                startBtn.disabled = false;
+            }
+        });
+
+        uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                filenameDiv.textContent = e.dataTransfer.files[0].name;
+                startBtn.disabled = false;
+            }
+        });
+
+        async function startTest() {
+            errorMsg.style.display = 'none';
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('timer', document.getElementById('timer').value);
+            formData.append('marks', document.getElementById('marks').value);
+
+            try {
+                const res = await fetch('/series/start', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok) {
+                    window.location.href = '/series/test/' + data.test_id;
+                } else {
+                    errorMsg.textContent = data.error;
+                    errorMsg.style.display = 'block';
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = '<i class="fa-solid fa-play"></i> Start Test';
+                }
+            } catch (e) {
+                errorMsg.textContent = 'Network error. Try again.';
+                errorMsg.style.display = 'block';
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fa-solid fa-play"></i> Start Test';
+            }
+        }
+    </script>
+</body>
+</html>

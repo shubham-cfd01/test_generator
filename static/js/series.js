@@ -1,5 +1,5 @@
 let timerInterval;
-let timeLeft = 600;
+let timeLeft = (typeof TIMER_MINS !== 'undefined' ? TIMER_MINS : 10) * 60;
 let testSubmitted = false;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -39,7 +39,7 @@ async function submitTest() {
     for (let [key, value] of formData.entries()) { answers[key] = value; }
 
     try {
-        const response = await fetch('/series/submit', {
+        const response = await fetch(`/series/submit/${TEST_ID}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(answers)
@@ -48,7 +48,7 @@ async function submitTest() {
         if (response.ok) {
             showResults(data);
         } else {
-            alert('Error submitting test: ' + (data.error || 'Unknown error'));
+            alert('Error: ' + (data.error || 'Unknown error'));
             btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Test';
             btn.disabled = false;
             testSubmitted = false;
@@ -68,6 +68,12 @@ function showResults(data) {
 
     document.getElementById('score-text').innerText = data.score;
     document.getElementById('total-text').innerText = data.total;
+
+    if (data.marks_total && data.marks_total > 0) {
+        const marksDiv = document.getElementById('marks-display');
+        marksDiv.style.display = 'block';
+        marksDiv.innerHTML = `Marks: ${data.marks_scored} / ${data.marks_total}`;
+    }
 
     setTimeout(() => {
         document.getElementById('progress-bar').style.width = `${data.percentage}%`;
