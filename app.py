@@ -1474,9 +1474,10 @@ def parse_questions_from_excel(file_stream):
     df.columns = [c.strip().lower() for c in df.columns]
     df = df.fillna('')
 
+    # embedded_images: row -> list of image bytes (multiple images per row)
     embedded_images = {}
+    orphan_images = []
 
-    # Primary: parse the xlsx ZIP structure directly for reliable image extraction
     try:
         zf = ZipFile(BytesIO(raw_bytes))
         media_files = {}
@@ -1492,30 +1493,29 @@ def parse_questions_from_excel(file_stream):
                 for rel in rel_tree:
                     rid = rel.get('Id')
                     target_raw = rel.get('Target', '')
-                    target_clean = target_raw.replace('../', '')
-                    rels_map[rid] = target_clean
-                    rels_map[rid + '_full'] = 'xl/' + target_clean
+                    if not target_raw:
+                        continue
+                    target_clean = target_raw.replace('../', '').lstrip('/')
+                    full = 'xl/' + target_clean if not target_clean.startswith('xl/') else target_clean
+                    rels_map[rid] = full
+                    rels_map[rid + '_alt'] = target_clean
 
         ns_xdr = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
         ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
         ns_r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
         for dname in zf.namelist():
-            if not ('drawings/drawing' in dname and dname.endswith('.xml')):
+            if 'drawings/drawing' not in dname or not dname.endswith('.xml'):
                 continue
             tree = ET.fromstring(zf.read(dname))
-
             for anchor_tag in ['twoCellAnchor', 'oneCellAnchor', 'absoluteAnchor']:
-                for anchor in tree.findall(f'{{{ns_xdr}}}{anchor_tag}'):
+                for anchor in tree.findall(f'.//{{{ns_xdr}}}{anchor_tag}'):
                     from_el = anchor.find(f'{{{ns_xdr}}}from')
                     row = None
                     if from_el is not None:
                         row_el = from_el.find(f'{{{ns_xdr}}}row')
                         if row_el is not None and row_el.text is not None:
                             row = int(row_el.text)
-
-                    if row is None:
-                        continue
 
                     blip = anchor.find(f'.//{{{ns_a}}}blip')
                     if blip is None:
@@ -1524,47 +1524,47 @@ def parse_questions_from_excel(file_stream):
                     if not embed_id:
                         continue
 
-                    target_path = rels_map.get(embed_id, '')
-                    full_path = rels_map.get(embed_id + '_full', '')
-                    img_data = (
-                        media_files.get(full_path) or
-                        media_files.get(target_path) or
-                        media_files.get(os.path.basename(target_path))
-                    )
+                    path = rels_map.get(embed_id) or rels_map.get(embed_id + '_alt')
+                    img_data = media_files.get(path) or media_files.get(os.path.basename(path or ''))
                     if img_data:
-                        embedded_images[row] = img_data
+                        if row is not None:
+                            embedded_images.setdefault(row, []).append(img_data)
+                        else:
+                            orphan_images.append(img_data)
 
         zf.close()
     except Exception as e:
-        print(f"[WARN] ZIP-based image extraction failed: {e}")
-        import traceback as _tb; _tb.print_exc()
+        print(f"[WARN] Excel ZIP image extraction failed: {e}")
 
-    # Fallback: try openpyxl API
-    if not embedded_images:
+    if not embedded_images and not orphan_images:
         try:
             wb = openpyxl.load_workbook(BytesIO(raw_bytes))
             ws = wb.active
-            for img in ws._images:
+            for img in getattr(ws, '_images', []):
                 try:
-                    anchor = img.anchor
-                    if hasattr(anchor, '_from'):
+                    anchor = getattr(img, 'anchor', None)
+                    row = None
+                    if anchor and hasattr(anchor, '_from'):
                         row = anchor._from.row
-                    elif hasattr(anchor, 'anchorFrom'):
+                    elif anchor and hasattr(anchor, 'anchorFrom'):
                         row = anchor.anchorFrom.row
-                    else:
-                        continue
+                    data = None
                     if hasattr(img, '_data') and callable(img._data):
-                        embedded_images[row] = img._data()
+                        data = img._data()
                     elif hasattr(img, 'ref') and hasattr(img.ref, 'read'):
-                        embedded_images[row] = img.ref.read()
+                        data = img.ref.read()
+                    if data and row is not None:
+                        embedded_images.setdefault(row, []).append(data)
                 except Exception:
                     continue
             wb.close()
         except Exception as e2:
-            print(f"[WARN] openpyxl fallback also failed: {e2}")
+            print(f"[WARN] Excel openpyxl fallback failed: {e2}")
 
     questions = []
     images_store = {}
+    # Excel: row 1 = header, row 2 = first data. DataFrame index 0 = first data row.
+    # Try multiple row mappings: i+2 (Excel row 2 for df 0), i+1, i+3, i, i+4
     for i, row in df.iterrows():
         q_id = int(row.get('id', i + 1))
         q = {
@@ -1579,24 +1579,36 @@ def parse_questions_from_excel(file_stream):
         opts = str(row.get('options', ''))
         if q['type'] == 'mcq' and opts:
             q['options'] = [o.strip() for o in opts.split('|')]
-        # Diagram column: only pasted images (no auto-draw). Images extracted from ZIP above.
-        for candidate_row in [i + 1, i, i + 2]:
+
+        imgs = None
+        for candidate_row in [i + 2, i + 1, i + 3, i, i + 4, i + 5]:
             if candidate_row in embedded_images:
-                images_store[q_id] = [embedded_images[candidate_row]]
+                imgs = embedded_images[candidate_row]
+                break
+        if imgs:
+            images_store[q_id] = imgs if isinstance(imgs, list) else [imgs]
+            q['has_image'] = True
+            q['image_count'] = len(images_store[q_id])
+        questions.append(q)
+
+    if orphan_images and not any(q.get('has_image') for q in questions):
+        for idx, q in enumerate(questions):
+            if idx < len(orphan_images):
+                images_store[q['id']] = [orphan_images[idx]]
                 q['has_image'] = True
                 q['image_count'] = 1
-                break
-        questions.append(q)
+
     return questions, images_store
 
 
 def _extract_docx_images_via_zip(file_stream):
-    """Extract images from docx using raw ZIP - maps block_index -> list of image bytes."""
+    """Extract images from docx - maps block_index -> list of image bytes. Uses same block order as _iter_docx_blocks_in_order."""
     from zipfile import ZipFile
     from xml.etree import ElementTree as ET
     raw = file_stream.read()
     file_stream.seek(0)
-    block_images = {}  # block_index -> [bytes, ...]
+    block_images = {}
+    ns_r = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
     try:
         zf = ZipFile(BytesIO(raw))
         if 'word/document.xml' not in zf.namelist():
@@ -1609,41 +1621,50 @@ def _extract_docx_images_via_zip(file_stream):
                 tree = ET.fromstring(zf.read(n))
                 for rel in tree:
                     rid = rel.get('Id')
-                    target = rel.get('Target', '')
-                    if target and 'media/' in target:
-                        rels[rid] = 'word/' + target.replace('../', '')
+                    target = (rel.get('Target') or '').strip()
+                    if not target:
+                        continue
+                    target = target.replace('../', '').lstrip('/')
+                    if 'media/' in target or target.endswith(('.png', '.jpg', '.jpeg', '.emf', '.wmf', '.gif')):
+                        path = 'word/' + target if not target.startswith('word/') else target
+                        rels[rid] = path
                 break
 
         media = {}
         for n in zf.namelist():
             if n.startswith('word/media/'):
-                media[n] = zf.read(n)
+                data = zf.read(n)
+                media[n] = data
+                media[os.path.basename(n)] = data
 
         doc_tree = ET.fromstring(zf.read('word/document.xml'))
         ns_w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
         body = doc_tree.find(f'{{{ns_w}}}body') or doc_tree.find('.//{*}body') or doc_tree
+        if body is None:
+            body = doc_tree
+
+        def _get_imgs_from_elem(elem):
+            imgs, seen = [], set()
+            for el in elem.iter():
+                tag = (el.tag or '').split('}')[-1] if '}' in (el.tag or '') else ''
+                rid = None
+                if tag == 'blip':
+                    rid = el.get(ns_r + 'embed')
+                elif 'imagedata' in tag:
+                    rid = el.get(ns_r + 'id') or el.get(ns_r + 'href')
+                if rid and rid in rels and rid not in seen:
+                    path = rels[rid]
+                    data = media.get(path) or media.get(os.path.basename(path))
+                    if data:
+                        imgs.append(data)
+                        seen.add(rid)
+            return imgs
+
         block_idx = 0
-        for child in body:
-            tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        for child in list(body):
+            tag = (child.tag or '').split('}')[-1] if '}' in (child.tag or '') else ''
             if tag == 'p':
-                imgs = []
-                seen_rid = set()
-                for blip in child.iter():
-                    if 'blip' in (blip.tag or ''):
-                        rid = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
-                        if rid and rid in rels and rid not in seen_rid:
-                            path = rels[rid]
-                            if path in media:
-                                imgs.append(media[path])
-                                seen_rid.add(rid)
-                for im in child.iter():
-                    if 'imagedata' in (im.tag or ''):
-                        rid = im.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
-                        if rid and rid in rels and rid not in seen_rid:
-                            path = rels[rid]
-                            if path in media:
-                                imgs.append(media[path])
-                                seen_rid.add(rid)
+                imgs = _get_imgs_from_elem(child)
                 if imgs:
                     block_images[block_idx] = imgs
                 block_idx += 1
@@ -1651,27 +1672,28 @@ def _extract_docx_images_via_zip(file_stream):
                 for tr in child.findall('.//{*}tr'):
                     for tc in tr.findall('.//{*}tc'):
                         for p in tc.findall('.//{*}p'):
-                            imgs = []
-                            seen_rid = set()
-                            for blip in p.iter():
-                                if 'blip' in (blip.tag or ''):
-                                    rid = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
-                                    if rid and rid in rels and rid not in seen_rid:
-                                        path = rels[rid]
-                                        if path in media:
-                                            imgs.append(media[path])
-                                            seen_rid.add(rid)
-                            for im in p.iter():
-                                if 'imagedata' in (im.tag or ''):
-                                    rid = im.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
-                                    if rid and rid in rels and rid not in seen_rid:
-                                        path = rels[rid]
-                                        if path in media:
-                                            imgs.append(media[path])
-                                            seen_rid.add(rid)
+                            imgs = _get_imgs_from_elem(p)
                             if imgs:
                                 block_images[block_idx] = imgs
                             block_idx += 1
+        if not block_images and media:
+            all_imgs = []
+            seen = set()
+            for el in doc_tree.iter():
+                tag = (el.tag or '').split('}')[-1] if '}' in (el.tag or '') else ''
+                rid = None
+                if tag == 'blip':
+                    rid = el.get(ns_r + 'embed')
+                elif 'imagedata' in tag:
+                    rid = el.get(ns_r + 'id') or el.get(ns_r + 'href')
+                if rid and rid in rels and rid not in seen:
+                    path = rels[rid]
+                    data = media.get(path) or media.get(os.path.basename(path))
+                    if data:
+                        all_imgs.append(data)
+                        seen.add(rid)
+            if all_imgs:
+                block_images['_orphans'] = all_imgs
         zf.close()
     except Exception as e:
         print(f"[WARN] docx ZIP image extraction failed: {e}")
@@ -1805,6 +1827,15 @@ def parse_questions_from_docx(file_stream):
     if current_q:
         current_q['image_count'] = len(images_store.get(current_q['id'], []))
         questions.append(current_q)
+
+    orphans = zip_images.get('_orphans', []) if isinstance(zip_images, dict) else []
+    if orphans and not any(q.get('has_image') for q in questions):
+        for idx, q in enumerate(questions):
+            if idx < len(orphans):
+                images_store[q['id']] = [orphans[idx]]
+                q['has_image'] = True
+                q['image_count'] = 1
+
     return questions, images_store
 
 
