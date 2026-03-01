@@ -1377,6 +1377,82 @@ def generator_home():
 test_sessions = {}
 
 
+def _parse_diagram_string(raw):
+    """Parse a diagram column value into a geometry dict.
+    Accepts JSON string or simple syntax like: triangle:base=6,height=4,labels=A;B;C
+    Auto-generates 'dimensions' dict for the renderer to display labels.
+    """
+    if not raw or str(raw).strip() == '':
+        return None
+    raw = str(raw).strip()
+    if raw.startswith('{'):
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if ':' not in raw:
+        return None
+    shape_type, _, params_str = raw.partition(':')
+    geo = {'type': shape_type.strip().lower()}
+    for part in params_str.split(','):
+        part = part.strip()
+        if '=' not in part:
+            continue
+        k, _, v = part.partition('=')
+        k, v = k.strip(), v.strip()
+        if ';' in v:
+            geo[k] = [s.strip() for s in v.split(';')]
+        else:
+            try:
+                geo[k] = int(v)
+            except ValueError:
+                try:
+                    geo[k] = float(v)
+                except ValueError:
+                    geo[k] = v
+
+    # Auto-generate dimensions dict for the renderer
+    dims = {}
+    shape = geo.get('type', '')
+    if shape in ('triangle', 'right_triangle'):
+        if 'base' in geo:
+            dims['base'] = f"{geo['base']} cm"
+        if 'height' in geo:
+            dims['height'] = f"{geo['height']} cm"
+    elif shape in ('rectangle', 'square'):
+        if 'width' in geo:
+            dims['width'] = f"{geo['width']} cm"
+        if 'height' in geo:
+            dims['height'] = f"{geo['height']} cm"
+        if shape == 'square' and 'width' in geo:
+            dims['side'] = f"{geo['width']} cm"
+    elif shape == 'circle':
+        if 'radius' in geo:
+            dims['radius'] = f"r = {geo['radius']} cm"
+    elif shape == 'parallelogram':
+        if 'base' in geo:
+            dims['base'] = f"{geo['base']} cm"
+        if 'height' in geo:
+            dims['height'] = f"{geo['height']} cm"
+    elif shape in ('cube', 'cuboid'):
+        if 'width' in geo:
+            dims['length'] = f"{geo['width']} cm"
+        if 'height' in geo:
+            dims['height'] = f"{geo['height']} cm"
+        if 'depth' in geo:
+            dims['depth'] = f"{geo['depth']} cm"
+        if shape == 'cube' and 'width' in geo:
+            dims['side'] = f"{geo['width']} cm"
+    elif shape == 'cylinder':
+        if 'radius' in geo:
+            dims['radius'] = f"r = {geo['radius']} cm"
+        if 'height' in geo:
+            dims['height'] = f"h = {geo['height']} cm"
+    if dims:
+        geo['dimensions'] = dims
+    return geo
+
+
 def parse_questions_from_excel(file_stream):
     df = pd.read_excel(file_stream)
     df.columns = [c.strip().lower() for c in df.columns]
@@ -1388,11 +1464,16 @@ def parse_questions_from_excel(file_stream):
             'type': str(row.get('type', 'mcq')).strip().lower(),
             'question': str(row.get('question', '')),
             'answer': str(row.get('answer', '')),
-            'options': []
+            'options': [],
+            'geometry': None
         }
         opts = str(row.get('options', ''))
         if q['type'] == 'mcq' and opts:
             q['options'] = [o.strip() for o in opts.split('|')]
+        diagram_raw = row.get('diagram', '')
+        geo = _parse_diagram_string(diagram_raw)
+        if geo:
+            q['geometry'] = geo
         questions.append(q)
     return questions
 
@@ -1408,19 +1489,25 @@ def parse_questions_from_docx(file_stream):
         text = para.text.strip()
         if not text:
             continue
-        style_name = (para.style.name or '').lower()
 
         if text.lower().startswith('q') and ('.' in text[:5] or ')' in text[:5]):
             if current_q:
                 questions.append(current_q)
             q_id += 1
             q_text = _re.sub(r'^[Qq]\d+[\.\)]\s*', '', text).strip()
-            current_q = {'id': q_id, 'type': 'fill_in_the_blanks', 'question': q_text, 'options': [], 'answer': ''}
+            current_q = {'id': q_id, 'type': 'fill_in_the_blanks', 'question': q_text, 'options': [], 'answer': '', 'geometry': None}
 
         elif text.lower().startswith('answer:') or text.lower().startswith('ans:'):
             if current_q:
                 ans = _re.sub(r'^(?:answer|ans)\s*:\s*', '', text, flags=_re.IGNORECASE).strip()
                 current_q['answer'] = ans
+
+        elif text.lower().startswith('diagram:'):
+            if current_q:
+                diag_str = _re.sub(r'^diagram\s*:\s*', '', text, flags=_re.IGNORECASE).strip()
+                geo = _parse_diagram_string(diag_str)
+                if geo:
+                    current_q['geometry'] = geo
 
         elif text.lower().startswith(('a)', 'b)', 'c)', 'd)', 'a.', 'b.', 'c.', 'd.')):
             if current_q:
@@ -1438,11 +1525,16 @@ def parse_questions_from_docx(file_stream):
 
 def generate_sample_excel():
     data = [
-        {"id": 1, "type": "mcq", "question": "Which of the following is a rational number?", "options": "√2|π|0|√3", "answer": "0"},
-        {"id": 2, "type": "mcq", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225"},
-        {"id": 3, "type": "mcq", "question": "If 3x + 5 = 20, what is the value of x?", "options": "3|5|15|4", "answer": "5"},
-        {"id": 4, "type": "fill_in_the_blanks", "question": "The cube root of 512 is ____.", "options": "", "answer": "8"},
-        {"id": 5, "type": "fill_in_the_blanks", "question": "The reciprocal of -3/4 is ____.", "options": "", "answer": "-4/3"},
+        {"id": 1, "type": "mcq", "question": "Which of the following is a rational number?", "options": "√2|π|0|√3", "answer": "0", "diagram": ""},
+        {"id": 2, "type": "mcq", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225", "diagram": ""},
+        {"id": 3, "type": "mcq", "question": "If 3x + 5 = 20, what is the value of x?", "options": "3|5|15|4", "answer": "5", "diagram": ""},
+        {"id": 4, "type": "fill_in_the_blanks", "question": "The cube root of 512 is ____.", "options": "", "answer": "8", "diagram": ""},
+        {"id": 5, "type": "fill_in_the_blanks", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12",
+         "diagram": "triangle:base=6,height=4,labels=A;B;C"},
+        {"id": 6, "type": "mcq", "question": "What is the area of the circle shown below?", "options": "12.56|15.70|28.27|50.27", "answer": "28.27",
+         "diagram": "circle:radius=3"},
+        {"id": 7, "type": "fill_in_the_blanks", "question": "Find the perimeter of the rectangle shown below.", "options": "", "answer": "22",
+         "diagram": "rectangle:width=7,height=4,labels=A;B;C;D"},
     ]
     df = pd.DataFrame(data)
     buf = BytesIO()
@@ -1457,7 +1549,8 @@ def generate_sample_docx():
     doc.add_heading('Sample Test Questions', level=1)
     doc.add_paragraph('Format: Start each question with Q1. Q2. etc.\n'
                       'Add options as A) B) C) D) on separate lines.\n'
-                      'Write Answer: on a separate line.\n')
+                      'Write Answer: on a separate line.\n'
+                      'For diagrams, add Diagram: line with shape syntax.\n')
     doc.add_paragraph('Q1. Which of the following is a rational number?')
     doc.add_paragraph('A) √2')
     doc.add_paragraph('B) π')
@@ -1474,6 +1567,18 @@ def generate_sample_docx():
     doc.add_paragraph('')
     doc.add_paragraph('Q3. The cube root of 512 is ____.')
     doc.add_paragraph('Answer: 8')
+    doc.add_paragraph('')
+    doc.add_paragraph('Q4. Find the area of the triangle shown below.')
+    doc.add_paragraph('Diagram: triangle:base=6,height=4,labels=A;B;C')
+    doc.add_paragraph('Answer: 12')
+    doc.add_paragraph('')
+    doc.add_paragraph('Q5. What is the area of the circle shown below?')
+    doc.add_paragraph('Diagram: circle:radius=3')
+    doc.add_paragraph('A) 12.56')
+    doc.add_paragraph('B) 15.70')
+    doc.add_paragraph('C) 28.27')
+    doc.add_paragraph('D) 50.27')
+    doc.add_paragraph('Answer: 28.27')
     buf = BytesIO()
     doc.save(buf)
     buf.seek(0)
@@ -1532,6 +1637,21 @@ def series_start():
         'marks': total_marks,
     }
     return jsonify({"test_id": test_id})
+
+
+@app.route('/series/diagram/<test_id>/<int:q_id>')
+@login_required
+def series_diagram(test_id, q_id):
+    """Render and serve a geometry diagram as PNG for a specific question."""
+    ts = test_sessions.get(test_id)
+    if not ts:
+        return "Not found", 404
+    for q in ts['questions']:
+        if q['id'] == q_id and q.get('geometry'):
+            buf = draw_geometry_diagram(q['geometry'])
+            if buf:
+                return send_file(buf, mimetype='image/png')
+    return "No diagram", 404
 
 
 @app.route('/series/test/<test_id>')
