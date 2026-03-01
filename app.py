@@ -1581,18 +1581,119 @@ def parse_questions_from_excel(file_stream):
     return questions, images_store
 
 
-def _extract_docx_paragraph_images(para, rels):
-    """Extract ALL images from a docx paragraph (inline, anchored, VML, OLE). Returns list of bytes."""
+def _extract_docx_images_via_zip(file_stream):
+    """Extract images from docx using raw ZIP - maps block_index -> list of image bytes."""
+    from zipfile import ZipFile
+    from xml.etree import ElementTree as ET
+    raw = file_stream.read()
+    file_stream.seek(0)
+    block_images = {}  # block_index -> [bytes, ...]
+    try:
+        zf = ZipFile(BytesIO(raw))
+        if 'word/document.xml' not in zf.namelist():
+            zf.close()
+            return block_images
+
+        rels = {}
+        for n in zf.namelist():
+            if n == 'word/_rels/document.xml.rels':
+                tree = ET.fromstring(zf.read(n))
+                for rel in tree:
+                    rid = rel.get('Id')
+                    target = rel.get('Target', '')
+                    if target and 'media/' in target:
+                        rels[rid] = 'word/' + target.replace('../', '')
+                break
+
+        media = {}
+        for n in zf.namelist():
+            if n.startswith('word/media/'):
+                media[n] = zf.read(n)
+
+        doc_tree = ET.fromstring(zf.read('word/document.xml'))
+        ns = {
+            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+            'v': 'urn:schemas-microsoft-com:vml',
+        }
+        body = doc_tree.find('w:body', ns) or doc_tree
+        block_idx = 0
+        for child in body:
+            tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+            if tag == 'p':
+                imgs = []
+                seen_rid = set()
+                for blip in child.iter():
+                    if 'blip' in (blip.tag or ''):
+                        rid = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                        if rid and rid in rels and rid not in seen_rid:
+                            path = rels[rid]
+                            if path in media:
+                                imgs.append(media[path])
+                                seen_rid.add(rid)
+                for im in child.iter():
+                    if 'imagedata' in (im.tag or ''):
+                        rid = im.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+                        if rid and rid in rels and rid not in seen_rid:
+                            path = rels[rid]
+                            if path in media:
+                                imgs.append(media[path])
+                                seen_rid.add(rid)
+                if imgs:
+                    block_images[block_idx] = imgs
+                block_idx += 1
+            elif tag == 'tbl':
+                for tr in child.findall('.//{*}tr'):
+                    for tc in tr.findall('.//{*}tc'):
+                        for p in tc.findall('.//{*}p'):
+                            imgs = []
+                            seen_rid = set()
+                            for blip in p.iter():
+                                if 'blip' in (blip.tag or ''):
+                                    rid = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                                    if rid and rid in rels and rid not in seen_rid:
+                                        path = rels[rid]
+                                        if path in media:
+                                            imgs.append(media[path])
+                                            seen_rid.add(rid)
+                            for im in p.iter():
+                                if 'imagedata' in (im.tag or ''):
+                                    rid = im.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+                                    if rid and rid in rels and rid not in seen_rid:
+                                        path = rels[rid]
+                                        if path in media:
+                                            imgs.append(media[path])
+                                            seen_rid.add(rid)
+                            if imgs:
+                                block_images[block_idx] = imgs
+                            block_idx += 1
+        zf.close()
+    except Exception as e:
+        print(f"[WARN] docx ZIP image extraction failed: {e}")
+    return block_images
+
+
+def _extract_docx_paragraph_images(para, rels, zip_images=None, block_idx=None):
+    """Extract images from a docx paragraph. Uses zip_images if provided (more reliable)."""
+    if zip_images is not None and block_idx is not None and block_idx in zip_images:
+        return zip_images[block_idx]
+
     seen_ids = set()
     images = []
 
     def _add_blob_for_rid(rid):
-        if not rid or rid in seen_ids or rid not in rels:
+        if not rid or rid in seen_ids:
             return
-        seen_ids.add(rid)
         try:
-            blob = rels[rid].target_part.blob
+            if hasattr(rels, 'get') and rid in rels:
+                blob = rels[rid].target_part.blob
+            elif hasattr(rels, 'related_parts') and rid in rels.related_parts:
+                blob = rels.related_parts[rid].blob
+            else:
+                return
             if blob:
+                seen_ids.add(rid)
                 images.append(blob)
         except Exception:
             pass
@@ -1603,37 +1704,17 @@ def _extract_docx_paragraph_images(para, rels):
     ns_o = '{urn:schemas-microsoft-com:office:office}'
     el = para._element
 
-    # DrawingML blips (covers inline images, anchored images, grouped shapes)
-    try:
-        for blip in el.iter(f'{ns_a}blip'):
-            _add_blob_for_rid(blip.get(f'{ns_r}embed'))
-    except Exception:
-        pass
-
-    # VML imagedata (images inserted via older VML format, shapes with fills)
-    try:
-        for imgdata in el.iter(f'{ns_v}imagedata'):
-            _add_blob_for_rid(imgdata.get(f'{ns_r}id'))
-            _add_blob_for_rid(imgdata.get(f'{ns_r}href'))
-    except Exception:
-        pass
-
-    # OLE objects (embedded objects with image representations)
-    try:
-        for ole in el.iter(f'{ns_o}OLEObject'):
-            _add_blob_for_rid(ole.get(f'{ns_r}id'))
-    except Exception:
-        pass
-
-    # VML shape imagedata (alternate format)
-    try:
-        for shape in el.iter(f'{ns_v}shape'):
-            style = shape.get('style', '')
-            for child in shape:
-                if 'imagedata' in child.tag:
-                    _add_blob_for_rid(child.get(f'{ns_r}id'))
-    except Exception:
-        pass
+    for blip in el.iter(f'{ns_a}blip'):
+        _add_blob_for_rid(blip.get(f'{ns_r}embed'))
+    for imgdata in el.iter(f'{ns_v}imagedata'):
+        _add_blob_for_rid(imgdata.get(f'{ns_r}id'))
+        _add_blob_for_rid(imgdata.get(f'{ns_r}href'))
+    for ole in el.iter(f'{ns_o}OLEObject'):
+        _add_blob_for_rid(ole.get(f'{ns_r}id'))
+    for shape in el.iter(f'{ns_v}shape'):
+        for child in shape:
+            if 'imagedata' in child.tag:
+                _add_blob_for_rid(child.get(f'{ns_r}id'))
 
     return images
 
@@ -1658,12 +1739,16 @@ def _iter_docx_blocks_in_order(doc):
 
 def parse_questions_from_docx(file_stream):
     from docx import Document
-    doc = Document(file_stream)
+    raw = file_stream.read()
+    file_stream.seek(0)
+    doc = Document(BytesIO(raw))
     rels = doc.part.rels
+    zip_images = _extract_docx_images_via_zip(BytesIO(raw))
     questions = []
     images_store = {}
     q_id = 0
     current_q = None
+    block_idx = 0
 
     try:
         block_iter = _iter_docx_blocks_in_order(doc)
@@ -1673,8 +1758,8 @@ def parse_questions_from_docx(file_stream):
     for para in block_iter:
         text = (para.text or '').strip()
 
-        # Extract every image from this paragraph (any pasted/drawn image)
-        para_images = _extract_docx_paragraph_images(para, rels)
+        para_images = _extract_docx_paragraph_images(para, rels, zip_images=zip_images, block_idx=block_idx)
+        block_idx += 1
 
         # Is this the start of a new question?
         is_new_q = bool(text) and text.lower().startswith('q') and ('.' in text[:5] or ')' in text[:5])
