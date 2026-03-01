@@ -125,27 +125,15 @@
                     <tr><td>question</td><td>Question text</td><td>What is 5+3?</td></tr>
                     <tr><td>options</td><td>Pipe-separated (MCQ only)</td><td><code>6|7|8|9</code></td></tr>
                     <tr><td>answer</td><td>Correct answer</td><td>8</td></tr>
-                    <tr><td>diagram</td><td>Auto-draw shape (optional)</td><td><code>triangle:base=6,height=4</code></td></tr>
+                    <tr><td>diagram</td><td>Paste your diagram image in this column (optional)</td><td>—</td></tr>
                 </table>
 
-                <p style="font-size:13px;color:var(--muted);margin-top:14px;"><strong>Supported Diagram Shapes:</strong></p>
-                <table style="margin-top:6px;">
-                    <tr><th>Shape</th><th>Syntax</th></tr>
-                    <tr><td>Triangle</td><td><code>triangle:base=6,height=4,labels=A;B;C</code></td></tr>
-                    <tr><td>Right Triangle</td><td><code>right_triangle:base=5,height=3,labels=P;Q;R</code></td></tr>
-                    <tr><td>Rectangle</td><td><code>rectangle:width=8,height=5,labels=A;B;C;D</code></td></tr>
-                    <tr><td>Square</td><td><code>square:width=5,labels=A;B;C;D</code></td></tr>
-                    <tr><td>Circle</td><td><code>circle:radius=4</code></td></tr>
-                    <tr><td>Parallelogram</td><td><code>parallelogram:base=7,height=4</code></td></tr>
-                    <tr><td>Cube / Cuboid</td><td><code>cube:width=5</code> &nbsp; <code>cuboid:width=6,height=4,depth=3</code></td></tr>
-                    <tr><td>Cylinder</td><td><code>cylinder:radius=3,height=7</code></td></tr>
-                </table>
-
-                <p style="font-size:13px;color:var(--muted);margin-top:14px;"><strong>Word (.docx)</strong> — Write questions as:</p>
+                <p style="font-size:13px;color:var(--muted);margin-top:14px;"><strong>Word (.docx)</strong> — Write questions in order. Everything below a question (options, pasted images, answer) belongs to that question until the next Q starts:</p>
                 <p style="font-size:12px;color:var(--muted);font-family:monospace;line-height:1.8;margin-top:4px;">
-                    Q1. Find the area of the triangle below.<br>
-                    Diagram: triangle:base=6,height=4,labels=A;B;C<br>
-                    Answer: 12
+                    Q1. Find the area of the circle below.<br>
+                    <span style="color:#64748b;">[paste or draw your diagram here]</span><br>
+                    A) 12.56 &nbsp; B) 28.27 &nbsp; C) 50.27<br>
+                    Answer: 28.27
                 </p>
             </div>
 

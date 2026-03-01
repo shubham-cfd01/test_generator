@@ -1475,7 +1475,6 @@ def parse_questions_from_excel(file_stream):
             if n.startswith('xl/media/'):
                 media_files[n] = zf.read(n)
                 media_files[os.path.basename(n)] = zf.read(n)
-        print(f"[IMG] Found {len(media_files)//2} media files in xl/media/")
 
         rels_map = {}
         for rname in zf.namelist():
@@ -1487,7 +1486,6 @@ def parse_questions_from_excel(file_stream):
                     target_clean = target_raw.replace('../', '')
                     rels_map[rid] = target_clean
                     rels_map[rid + '_full'] = 'xl/' + target_clean
-        print(f"[IMG] Relationship IDs found: {list(k for k in rels_map if not k.endswith('_full'))}")
 
         ns_xdr = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
         ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -1526,12 +1524,8 @@ def parse_questions_from_excel(file_stream):
                     )
                     if img_data:
                         embedded_images[row] = img_data
-                        print(f"[IMG] Mapped image '{target_path}' to row {row}")
-                    else:
-                        print(f"[IMG] Could not find media for rId={embed_id}, target={target_path}")
 
         zf.close()
-        print(f"[IMG] Total images extracted: {len(embedded_images)}, rows: {list(embedded_images.keys())}")
     except Exception as e:
         print(f"[WARN] ZIP-based image extraction failed: {e}")
         import traceback as _tb; _tb.print_exc()
@@ -1554,7 +1548,6 @@ def parse_questions_from_excel(file_stream):
                         embedded_images[row] = img._data()
                     elif hasattr(img, 'ref') and hasattr(img.ref, 'read'):
                         embedded_images[row] = img.ref.read()
-                    print(f"[IMG-fallback] Mapped openpyxl image to row {row}")
                 except Exception:
                     continue
             wb.close()
@@ -1571,17 +1564,13 @@ def parse_questions_from_excel(file_stream):
             'question': str(row.get('question', '')),
             'answer': str(row.get('answer', '')),
             'options': [],
-            'geometry': None,
             'has_image': False,
             'image_count': 0,
         }
         opts = str(row.get('options', ''))
         if q['type'] == 'mcq' and opts:
             q['options'] = [o.strip() for o in opts.split('|')]
-        diagram_raw = row.get('diagram', '')
-        geo = _parse_diagram_string(diagram_raw)
-        if geo:
-            q['geometry'] = geo
+        # Diagram column: only pasted images (no auto-draw). Images extracted from ZIP above.
         for candidate_row in [i + 1, i, i + 2]:
             if candidate_row in embedded_images:
                 images_store[q_id] = [embedded_images[candidate_row]]
@@ -1649,19 +1638,42 @@ def _extract_docx_paragraph_images(para, rels):
     return images
 
 
+def _iter_docx_blocks_in_order(doc):
+    """Yield paragraphs and table-cell paragraphs in document order (body + tables)."""
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+    body = doc.element.body
+    for child in body.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, doc)
+        elif isinstance(child, CT_Tbl):
+            tbl = Table(child, doc)
+            for row in tbl.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        yield para
+
+
 def parse_questions_from_docx(file_stream):
     from docx import Document
     doc = Document(file_stream)
     rels = doc.part.rels
     questions = []
-    images_store = {}  # q_id -> list of image bytes
+    images_store = {}
     q_id = 0
     current_q = None
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
+    try:
+        block_iter = _iter_docx_blocks_in_order(doc)
+    except Exception:
+        block_iter = doc.paragraphs
 
-        # Extract every image from this paragraph
+    for para in block_iter:
+        text = (para.text or '').strip()
+
+        # Extract every image from this paragraph (any pasted/drawn image)
         para_images = _extract_docx_paragraph_images(para, rels)
 
         # Is this the start of a new question?
@@ -1676,10 +1688,10 @@ def parse_questions_from_docx(file_stream):
             current_q = {
                 'id': q_id, 'type': 'fill_in_the_blanks',
                 'question': q_text, 'options': [], 'answer': '',
-                'geometry': None, 'has_image': False, 'image_count': 0,
+                'has_image': False, 'image_count': 0,
             }
 
-        # Everything (images, text) belongs to the current question
+        # Rule: everything below (options, diagrams, images) belongs to current question until next Q
         if para_images and current_q:
             images_store.setdefault(current_q['id'], []).extend(para_images)
             current_q['has_image'] = True
@@ -1691,13 +1703,6 @@ def parse_questions_from_docx(file_stream):
             if current_q:
                 ans = _re.sub(r'^(?:answer|ans)\s*:\s*', '', text, flags=_re.IGNORECASE).strip()
                 current_q['answer'] = ans
-
-        elif text.lower().startswith('diagram:'):
-            if current_q:
-                diag_str = _re.sub(r'^diagram\s*:\s*', '', text, flags=_re.IGNORECASE).strip()
-                geo = _parse_diagram_string(diag_str)
-                if geo:
-                    current_q['geometry'] = geo
 
         elif text.lower().startswith(('a)', 'b)', 'c)', 'd)', 'a.', 'b.', 'c.', 'd.')):
             if current_q:
@@ -1720,12 +1725,9 @@ def generate_sample_excel():
         {"id": 2, "type": "mcq", "question": "What is the square of 15?", "options": "225|255|125|325", "answer": "225", "diagram": ""},
         {"id": 3, "type": "mcq", "question": "If 3x + 5 = 20, what is the value of x?", "options": "3|5|15|4", "answer": "5", "diagram": ""},
         {"id": 4, "type": "fill_in_the_blanks", "question": "The cube root of 512 is ____.", "options": "", "answer": "8", "diagram": ""},
-        {"id": 5, "type": "fill_in_the_blanks", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12",
-         "diagram": "triangle:base=6,height=4,labels=A;B;C"},
-        {"id": 6, "type": "mcq", "question": "What is the area of the circle shown below?", "options": "12.56|15.70|28.27|50.27", "answer": "28.27",
-         "diagram": "circle:radius=3"},
-        {"id": 7, "type": "fill_in_the_blanks", "question": "Find the perimeter of the rectangle shown below.", "options": "", "answer": "22",
-         "diagram": "rectangle:width=7,height=4,labels=A;B;C;D"},
+        {"id": 5, "type": "fill_in_the_blanks", "question": "Find the area of the triangle shown below.", "options": "", "answer": "12", "diagram": ""},
+        {"id": 6, "type": "mcq", "question": "What is the area of the circle shown below?", "options": "12.56|15.70|28.27|50.27", "answer": "28.27", "diagram": ""},
+        {"id": 7, "type": "fill_in_the_blanks", "question": "Find the perimeter of the rectangle shown below.", "options": "", "answer": "22", "diagram": ""},
     ]
     df = pd.DataFrame(data)
     buf = BytesIO()
@@ -1741,7 +1743,7 @@ def generate_sample_docx():
     doc.add_paragraph('Format: Start each question with Q1. Q2. etc.\n'
                       'Add options as A) B) C) D) on separate lines.\n'
                       'Write Answer: on a separate line.\n'
-                      'For diagrams, add Diagram: line with shape syntax.\n')
+                      'For diagrams, paste or draw your image below the question—everything belongs to that question until the next Q.\n')
     doc.add_paragraph('Q1. Which of the following is a rational number?')
     doc.add_paragraph('A) √2')
     doc.add_paragraph('B) π')
@@ -1760,11 +1762,11 @@ def generate_sample_docx():
     doc.add_paragraph('Answer: 8')
     doc.add_paragraph('')
     doc.add_paragraph('Q4. Find the area of the triangle shown below.')
-    doc.add_paragraph('Diagram: triangle:base=6,height=4,labels=A;B;C')
+    doc.add_paragraph('[Paste or draw your diagram here]')
     doc.add_paragraph('Answer: 12')
     doc.add_paragraph('')
     doc.add_paragraph('Q5. What is the area of the circle shown below?')
-    doc.add_paragraph('Diagram: circle:radius=3')
+    doc.add_paragraph('[Paste or draw your diagram here]')
     doc.add_paragraph('A) 12.56')
     doc.add_paragraph('B) 15.70')
     doc.add_paragraph('C) 28.27')
